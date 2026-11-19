@@ -1,0 +1,59 @@
+.settings-dialog.channel-manager { width:min(100%,940px); }
+.channel-current { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px; margin:0 0 14px; padding:10px 12px; border:1px solid var(--line); border-radius:5px; font-size:13px; color:var(--secondary); }
+.channel-current strong { color:var(--ink); font-weight:500; }
+.channel-current>span { margin-left:auto; overflow-wrap:anywhere; }
+.channel-manager-grid { display:grid; grid-template-columns:minmax(210px,0.8fr) minmax(0,1.4fr); gap:24px; }
+.channel-library-pane { min-width:0; padding-right:18px; border-right:1px solid var(--line); }
+.channel-add { width:100%; justify-content:center; margin-bottom:12px; }
+.channel-search { display:flex; gap:7px; align-items:center; padding:0 9px; border:1px solid var(--strong-line); border-radius:5px; color:var(--secondary); }
+.channel-search input { width:100%; min-width:0; min-height:36px; border:0; outline:none; background:transparent; font-size:13px; color:var(--ink); }
+.channel-search:focus-within { outline:2px solid var(--ink); outline-offset:2px; }
+.channel-filters { display:flex; gap:5px; margin:10px 0; }
+.channel-filters button { flex:1; padding:6px 4px; border:1px solid var(--line); border-radius:4px; background:#fff; color:var(--secondary); font-size:12px; cursor:pointer; }
+.channel-filters button[aria-pressed='true'] { border-color:var(--ink); color:var(--ink); background:#f7f7f7; }
+.channel-list { display:flex; flex-direction:column; gap:7px; max-height:440px; overflow:auto; padding:2px; }
+.channel-list-item { width:100%; min-width:0; display:flex; flex-direction:column; align-items:stretch; gap:5px; padding:11px 10px; text-align:left; border:1px solid var(--line); border-radius:5px; background:#fff; color:var(--ink); cursor:pointer; }
+.channel-list-item:hover { background:#fafafa; }
+.channel-list-item.selected { border-color:var(--ink); box-shadow:inset 2px 0 var(--ink); }
+.channel-list-title { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:14px; }
+.channel-list-title strong { overflow-wrap:anywhere; font-weight:500; }
+.channel-badge { display:inline-block; padding:2px 4px; border:1px solid var(--line); border-radius:3px; font-size:10px; white-space:nowrap; }
+.channel-badge.active { color:var(--inserted-ink); border-color:#c4d9c9; }
+.channel-list-model,.channel-list-address { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--secondary); }
+.channel-list-state { font-size:11px; color:var(--secondary); line-height:1.5; }
+.channel-empty { padding:16px 4px; font-size:13px; color:var(--secondary); }
+.channel-editor { min-width:0; }
+.channel-editor-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.channel-editor-heading h3 { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0; font-size:15px; font-weight:500; }
+.channel-editor-heading h3 small { color:var(--secondary); font-size:11px; font-weight:400; }
+.channel-editor .settings-field { margin:12px 0; }
+.channel-editor-actions { flex-wrap:wrap; align-items:center; }
+.channel-editor-actions button { min-height:34px; font-size:13px; }
+.channel-delete { color:var(--deleted-ink); }
+.channel-delete-confirm { margin:10px 0; padding:10px; border:1px solid #e7bcbc; border-radius:5px; font-size:13px; line-height:1.7; }
+.channel-delete-confirm p { margin:0 0 8px; }
+.channel-delete-confirm>div { display:flex; gap:6px; justify-content:flex-end; }
+.channel-refresh { margin-left:8px; font-size:12px; }
+.agent-channel-switcher { display:flex; align-items:center; flex-wrap:wrap; gap:7px; min-width:0; font-size:12px; color:var(--secondary); }
+.agent-channel-switcher select { min-width:120px; max-width:230px; min-height:32px; padding:5px 27px 5px 8px; border:1px solid var(--strong-line); border-radius:5px; background:#fff; color:var(--ink); font-size:12px; }
+.agent-channel-switcher>.ghost-button { display:inline-flex; align-items:center; gap:4px; min-height:32px; padding:5px 7px; font-size:12px; }
+.channel-switch-status { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.channel-switch-error { flex-basis:100%; font-size:11px; line-height:1.5; }
+.channel-switch-error { color:var(--deleted-ink); }
+@media (max-width:1080px) {
+  .top-actions .agent-channel-switcher>label { display:none; }
+  .top-actions .agent-channel-switcher select { min-width:100px; max-width:170px; }
+  .top-actions .agent-channel-switcher>.ghost-button { font-size:0; gap:0; padding:5px; }
+}
+@media (max-width:600px) {
+  .top-actions .agent-channel-switcher select { min-width:80px; max-width:115px; }
+  .top-actions>.compact-action { font-size:0; gap:0; }
+}
+@media (max-width:640px) {
+  .channel-manager-grid { grid-template-columns:1fr; gap:18px; }
+  .channel-library-pane { padding-right:0; padding-bottom:16px; border-right:0; border-bottom:1px solid var(--line); }
+  .channel-list { max-height:210px; }
+  .channel-current>span { margin-left:0; flex-basis:100%; }
+  .channel-editor-actions { justify-content:flex-start; }
+  .agent-channel-switcher select { min-width:100px; max-width:180px; }
+}

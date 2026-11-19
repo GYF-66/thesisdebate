@@ -1,0 +1,35 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
+const { transformSync } = require('next/dist/build/swc')
+const React = require('react')
+const { renderToStaticMarkup } = require('react-dom/server')
+
+function compile(relative, dependencies = {}) {
+  const source = fs.readFileSync(path.join(__dirname, '..', relative), 'utf8')
+  const compiled = transformSync(source, { filename: relative, jsc: { parser: { syntax: 'typescript', tsx: relative.endsWith('.tsx') }, target: 'es2020', transform: { react: { runtime: 'automatic' } } }, module: { type: 'commonjs' } }).code
+  const module = { exports: {} }
+  vm.runInNewContext(compiled, { module, exports: module.exports, require: name => dependencies[name] || require(name) })
+  return module.exports
+}
+const helpers = compile('lib/agentProgress.ts')
+const original = Array.from({ length: 70 }, (_, id) => ({ id: String(id + 1), type: 'role_checkpoint', payload: { agent_id: id % 2 ? 'methods' : 'norms' } }))
+const merged = helpers.mergeProgressEvents(original, [original[4], { id: '71', type: 'role_completed', payload: { agent_id: 'methods' } }])
+assert.equal(merged.length, 71)
+assert.equal(merged[0].id, '1')
+assert.equal(merged.at(-1).id, '71')
+const normalized = helpers.normalizeProgressEvent({ id: 5, type: 'role_checkpoint', created_at: '2026-11-19T00:00:00Z', payload: { agent_id: 'methods', progress: { completed_units: 1 }, role_result: { chunks: 'private model output' }, authorization: 'secret' } })
+assert.equal(normalized.created_at, '2026-11-19T00:00:00Z')
+assert.equal(normalized.payload.role_result, undefined)
+assert.equal(normalized.payload.authorization, undefined)
+const { default: Progress } = compile('components/AgentRoleProgress.tsx', { '../lib/agentProgress': helpers })
+const markup = renderToStaticMarkup(React.createElement(Progress, { name: '结构审查官', status: 'running', progress: { phase: 'review', round: 1, completed_units: 2, total_units: 5, unit: 'window', reused_units: 1, updated_at: '2026-11-19T00:00:00Z' }, events: [] }))
+assert.match(markup, /<details[^>]*data-testid="agent-role-progress"/)
+assert.doesNotMatch(markup, /<details[^>]*\sopen(?:[ =>])/)
+assert.match(markup, /value="2" max="5"/)
+assert.ok(markup.includes('2/5 段'))
+const unknown = renderToStaticMarkup(React.createElement(Progress, { name: '结构审查官', status: 'running', events: [] }))
+assert.doesNotMatch(unknown, /<progress/)
+assert.match(unknown, /正在检查/)
+console.log('PASS: 71-event replay, deduplication, safe metadata, default-collapsed role details, real units and unknown progress')
