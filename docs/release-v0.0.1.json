@@ -1,0 +1,26 @@
+{
+  "version": "v0.0.1",
+  "release_date": "2026-11-19",
+  "executable": "研辩台_0.0.1.exe",
+  "executable_bytes": 51883624,
+  "executable_sha256": "b1aff790b7e9e073f8bd49c6e4a2929b85d252fff952d9e2e830fecc539b4bca",
+  "platform": "Windows x64",
+  "source_provenance": "与首版可执行文件构建记录匹配的项目源码；发布准备仅更新文档、示例、截图及忽略规则。",
+  "verification": {
+    "backend_tests": 296,
+    "backend_exit_status": 0,
+    "frontend_test_files": 6,
+    "frontend_exit_status": 0,
+    "typescript_exit_status": 0
+  },
+  "screenshots": {
+    "source": "本次发布的 EXE，以独立本地数据目录打开仓库内示例文档后截图。",
+    "files": [
+      "docs/screenshots/workbench.jpg",
+      "docs/screenshots/revisions.jpg",
+      "docs/screenshots/typography.jpg",
+      "docs/screenshots/channels.jpg",
+      "docs/screenshots/export.jpg"
+    ]
+  }
+}

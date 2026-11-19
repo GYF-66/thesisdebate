@@ -1,0 +1,50 @@
+name: 问题反馈
+description: 报告运行异常、导入导出或修订结果问题
+title: "[问题] "
+body:
+  - type: markdown
+    attributes:
+      value: 请先搜索已有 Issues，避免重复反馈。可以附上已脱敏的最小示例和功能截图，请勿上传密钥或完整私人论文。
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      placeholder: 例如：v0.0.1 Windows EXE / 源码运行及提交号
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      placeholder: Windows 版本、系统位数；源码运行时补充 Python、Node.js 版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开软件开始，说明使用了什么文档类型、选择了哪些功能。
+      placeholder: |
+        1. 打开研辩台，导入……
+        2. 点击……
+        3. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 请提供完整错误提示；可拖入截图或脱敏后的最小示例。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志与补充信息
+      description: 可选。请删除 API Key、个人信息和不便公开的文档内容。

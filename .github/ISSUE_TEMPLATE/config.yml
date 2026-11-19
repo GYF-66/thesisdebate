@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用说明与功能截图
+    url: https://github.com/GYF-66/thesisdebate#readme
+    about: 查看项目介绍、运行方法与当前版本的功能边界。

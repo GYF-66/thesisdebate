@@ -1,98 +1,167 @@
 # 研辩台 ThesisDebate
 
-面向学生、导师和评审管理员的论文逻辑质检与格式修订工作台。当前候选版包含 Markdown 导入、确定性格式检查、逐项接受/拒绝、撤销/恢复、对齐差异、独立修改比照核验、五 Agent 稿件审查、SQLite 版本历史和 LaTeX 公式编辑。
+**把阅读、审查、修订与导出，放进同一个论文审查与修订工作台。**
 
-规则核验始终返回 `engine=deterministic`、`llm_enabled=false`；五 Agent 是另一条实际模型调用链路，需要先配置兼容服务。它由方法论、创新点、学术规范、修订对照四位审查官和证据裁判官组成，只基于稿件与上传资料输出可复核意见。模型不能直接改稿，用户手动接受才生成新版本。配置就绪不等于真实服务已成功执行，任务状态与事件才是运行依据。
+研辩台是一款面向学生、研究者与文档写作者的本地桌面应用。围绕一份文档，可以完成内容编辑、格式检查、多角色审查、修改核验与成果导出；每条建议都可以查看出处、决定是否接受，并在需要时撤销。
 
-## Windows 启动
+[下载 Windows 首版 v0.0.1](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1) · [提交问题或建议](https://github.com/GYF-66/thesisdebate/issues/new/choose) · [更新记录](CHANGELOG.md)
 
-双击 `desktop/dist/研辩台.exe`。程序自带 Python、后端和页面，无需另开终端。窗口顶部“研辩台 → 模型配置”可打开配置文件；填写现有兼容服务后重新启动。论文和历史保存在 `%LOCALAPPDATA%/ThesisDebate`，关闭窗口会停止本地服务。构建方式见 [Windows 说明](desktop/README.md)。
+> 首次启动是空白工作区。下方截图来自本次发布的可执行文件，使用仓库中的示例文档；模型服务需要自行配置。
 
-## Workspace
+## 功能一览
 
-- `frontend/`: Next.js + TypeScript workbench UI，生产页面由 Windows 版内置服务提供。
-- `desktop/`: Windows 原生窗口、单文件 EXE 入口与构建脚本。
-- `backend/`: FastAPI API、确定性修订核验、OpenAI Agents SDK 审查引擎及 SQLite 存储。
-- `docker-compose.yml`: 预留 PostgreSQL/pgvector、Redis 和 MinIO 服务；当前运行不依赖这些服务。
+| 功能 | 可以做什么 |
+| --- | --- |
+| 文档工作台 | 新建或导入 Markdown、TXT、DOCX；富文本编辑、标题目录、表格与公式预览，自动保存并恢复上次文档。 |
+| 格式检查与修订 | 按规则检查标题编号、标题间距、行尾空白、参考文献编号等；同类建议分组，支持逐项或批量接受、拒绝及撤销。 |
+| 多角色 Agent 审查 | 配置兼容模型服务后，从多个角色检查论证与证据，查看任务进度、来源定位和历史版本，人工确认修改。 |
+| 模型渠道库 | 保存多个服务配置，搜索、筛选、测试连接和切换当前渠道；已开始的任务保留自己的配置快照。 |
+| 排版与字体 | 设置字体、字号、行距、段距、页边距和六级标题；检索本机字体，预览排版并逐项确认调整。 |
+| 资料与返修辅助 | 导入资料、按关键词查找出处和摘录；整理导师任务、批注与答复，生成提交检查单和答辩准备问题。 |
+| 学校格式模板 | 选择文档类型，导入 TXT、Markdown 或带文字层的 PDF 规范，提取规则、处理冲突并人工确认。 |
+| 成果导出 | 生成 Markdown、DOCX 与分页 PDF，选择原稿、预期稿或当前稿；提供修改对照和 DOCX 结构保护。 |
 
-## Run
+## 功能截图
 
-Start the API in one terminal:
+### 文档工作台
 
-```powershell
-cd backend
-py -3.12 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -c "import sqlite3; print(sqlite3.sqlite_version)"
-uvicorn app.main:app --reload --port 8001
+正文、目录、修改建议与排版入口集中呈现，适合边阅读边修订。
+
+![文档工作台](docs/screenshots/workbench.jpg)
+
+### 格式建议与修改对照
+
+同类修改集中查看，逐项确认建议与原文之间的关系。
+
+![格式建议与修改对照](docs/screenshots/revisions.jpg)
+
+### 排版与字体
+
+检索本机字体，并在导出前检查可用字体和替代情况。
+
+![排版与字体](docs/screenshots/typography.jpg)
+
+### 模型渠道设置
+
+模型服务可自行配置；未配置时，本地编辑、格式检查与导出仍可使用。
+
+![模型渠道设置](docs/screenshots/channels.jpg)
+
+### 导出文档
+
+按用途选择文件格式、导出范围与 DOCX 结构保护方式。
+
+![导出文档](docs/screenshots/export.jpg)
+
+## 下载与开始使用
+
+1. 打开 [v0.0.1 首版发布页](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1)，下载附件 `研辩台_0.0.1.exe`。
+2. 在 Windows x64 上运行。程序已内置 Python、后端与页面，无需安装 Node.js 或启动终端；系统需要具备 Microsoft Edge WebView2 Runtime。
+3. 新建文档，或导入 `.md`、`.txt`、`.docx` 文件。也可以使用 [示例论文](examples/论文示例.md) 体验本地格式检查。
+4. 打开格式检查，查看修改建议，确认后导出修订副本。需要多角色审查时，再通过顶部的渠道管理设置模型服务。
+
+首版文件大小为 **51,883,624 字节（约 49.48 MiB）**，SHA-256：
+
+```text
+b1aff790b7e9e073f8bd49c6e4a2929b85d252fff952d9e2e830fecc539b4bca
 ```
 
-Start the UI in another terminal:
+在 PowerShell 中可核对下载文件：
 
 ```powershell
+Get-FileHash -Algorithm SHA256 './研辩台_0.0.1.exe'
+```
+
+## 一次完整的修订流程
+
+1. **导入与编辑**：打开文档，确认正文与标题目录，修改内容并保存。
+2. **本地格式检查**：先运行确定性规则，检查标题、空白与编号等可直接验证的问题。
+3. **模型审查（可选）**：配置服务后运行多角色审查，检查建议中的证据与原文定位。
+4. **确认修改**：通过差异与修改核验，逐条接受、保留原文或撤销；格式调整需要明确应用。
+5. **预览与导出**：检查分页、字体和导出范围，保存 DOCX、PDF 或 Markdown 副本。
+
+## 模型配置与本地数据
+
+顶部的 **Agent 渠道** 与 **管理 Agent 渠道** 提供服务地址、模型和密钥设置，以及连接测试和渠道切换。程序不会提供公共密钥，模型调用费用由所使用的服务决定。没有可用渠道时，不会生成虚构的模型审查结果。
+
+桌面版的数据保存在 `%LOCALAPPDATA%/ThesisDebate/`，包括 SQLite 文档数据和本地渠道配置；Windows 渠道密钥使用系统 DPAPI 保护。更新或移动 EXE 不会清空这个目录。备份时请先关闭程序，再复制整个数据目录。
+
+本地编辑和规则检查无需模型服务。运行模型审查会将相应文档内容发送到选定服务；主动触发文献核验时，会查询 Crossref，必要时按 DOI 查询 OpenAlex。
+
+## 当前版本的边界
+
+- **正文导入支持 Markdown、TXT、DOCX**；论文 PDF 正文导入、扫描件 OCR 尚未实现。资料库和规范工具可提取带文字层 PDF 的文本。
+- DOCX 导入会提取可编辑内容并提示兼容性。结构保护导出只回写可安全映射的普通文字；复杂结构修改可能被阻止。重新生成可编辑副本时，图片、域、批注等对象可能无法还原，界面会提示。
+- 公式可在编辑器中预览；重新生成 DOCX/PDF 时保留 LaTeX 源码，不承诺公式字形排版。原 DOCX 的受保护公式部件可保留。
+- 资料问答目前是本地关键词检索与摘录，文献核验检查元数据是否匹配，均不等同于证明某个学术结论。
+- 当前以本地单用户工作区为主；多人实时协作、查重检测与真实 TeX 编译不属于首版能力。
+
+## 从源码运行
+
+源码与本次发布的 EXE 来自同一构建源。发布版本以 **v0.0.1** 为准，部分内部开发包的版本字段暂沿用 `0.1.0`。开发环境需要 Python 3.12、Node.js 20.9 或更高版本，以及 npm。
+
+在项目根目录安装依赖：
+
+```powershell
+py -3.12 -m venv backend/.venv
+./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 cd frontend
-npm install
-npm run dev
+npm ci
+cd ..
 ```
 
-Open `http://localhost:3000`. Markdown files can be imported and edited in the workbench. DOCX and PDF can currently be identified but not parsed; convert them to an editable Markdown copy before running a scan. The original file is not overwritten.
-
-使用完整、可正常 `import sqlite3` 的 Python 3.12+ 安装创建虚拟环境；若系统 Python 缺少 SQLite DLL，应换用完整安装重建环境。当前 SQLite 默认写入 `backend/data/reviews.sqlite3`，可通过 `THESISDEBATE_DB_PATH` 指定路径。格式状态、审查、事件、决策和版本可跨 API 重启保留。当前按本地单用户、单 API worker 使用；不要用多个 worker 承诺协同一致性。
-
-`docker compose up -d` 仅启动预留基础设施，当前 FastAPI 不连接这些服务。`backend/migrations/001_format_revision.sql` 是另一条 PostgreSQL 设计记录，不会自动应用到当前 SQLite。
-
-## 模型服务配置
-
-在后端启动环境中提供以下三项；没有默认模型，也不会自动改用其他服务：
-
-| 配置 | 用途 | 兼容回退变量 |
-| --- | --- | --- |
-| `AGENT_BASE_URL` | OpenAI-compatible API 基址，无 URL 凭据、查询参数或片段 | `OPENAI_BASE_URL` |
-| `AGENT_MODEL` | 已配置服务支持的模型标识 | `OPENAI_MODEL` |
-| `AGENT_API_KEY` | 该服务的凭据，仅在服务端读取 | `OPENAI_API_KEY` |
-
-`GET /agent-config` 只返回配置就绪状态、端点、模型和原因，不返回密钥。未配置时规则功能仍可使用，模型审查返回未配置；服务必须支持 Chat Completions 和严格 JSON schema 输出，不兼容或失败会显示实际失败，不回退成示例聊天。SDK 使用 `openai-agents==0.25.0`，每次运行禁用远程 tracing，以本地 SQLite 事件记录审查过程。
-
-启动模型审查会把稿件和本次上传的 TXT/MD 材料发送到所配置的模型服务。本轮没有联网检索工具；这意味着只提供稿件/材料证据通道，不是对模型预训练知识的证明。数据库包含正文、材料和审查结果，不包含环境中的模型凭据。
-
-## Review loop
-
-1. Import a Markdown document (or use the included demo content) and start a deterministic formatting run.
-2. Inspect proposed changes, anchors, and before/after values.
-3. Accept or reject changes individually; accepted changes appear in the server preview. Undo returns one accepted change to pending; restore resets the run.
-4. Use the color-coded original/preview comparison.
-   The comparison aligns inserted/deleted/replaced lines and shows the independent deterministic review from `GET /format-runs/{id}/review`. Review checks cover source/patch integrity, unresolved decisions, and heuristic number/formula/citation changes. A passing token check does not establish semantic or academic correctness.
-5. 在右侧 Agent 审查中查看模型配置状态，按需上传 TXT/MD 参考资料后发起五角色审查。最多十份资料、合计 300,000 字符；任务绑定原稿和预览摘要，展示真实状态、证据、裁判意见与覆盖率。可取消，失败/部分完成/取消后可对同一快照显式重试。
-6. 手动接受或拒绝 Agent 意见。只有证据成立、唯一锚点有效且当前版本未变化的文本建议能接受；接受或历史恢复后创建新版本、重跑确定性规则，并自动排队一次完整五 Agent 跟进审查。跟进以操作前预览为对照原稿、操作后内容为修订稿，继承已有材料；它不会自动接受下一条意见。旧审查快照不再能覆盖新版本，历史恢复不删除已有记录。
-7. Enter inline or block LaTeX formulas and inspect the KaTeX-rendered editor preview. LaTeX is retained in the editor document.
-
-The deterministic rules operate on Markdown headings, heading spacing, reference-list numbering, and trailing whitespace. 静态示例讨论不再代表模型运行结果；五角色意见来自实际审查任务。PDF 文件识别不等于已解析其内容，当前不声称支持无损 PDF 原地排版。
-
-## Revision review and current limitations
-
-- `GET /format-runs/{id}/review` recomputes the report from the run source and accepted preview. It returns `engine: deterministic`, `llm_enabled: false`, source/preview SHA-256 hashes, check results, aligned rows, and a unified diff. The overall status is `passed`, `needs_review`, or `blocked`. Demo findings without a source never pass review.
-- Accepting a change validates its UTF-16 anchor, exact quote, context hash, replacement availability, and conflicts with accepted changes. Requests can include `expected_source_hash`; a mismatch returns HTTP 409 before changing the decision.
-- Importing or editing a document requires a new formatting run. Existing run results refer to their captured source version. 对同一文档手动重新扫描时传 `document_id` 及当前 `expected_head_hash`，过期输入返回 HTTP 409。`GET /format-runs/{run_id}` 返回运行及版本元数据。
-- 模型推理链路、上传材料证据、严格输出校验和 SQLite 已接入。逐字引文匹配只能验证出处，不能证明学术观点正确、结论有效、引用完整或世界首创；没有证据的发现保留 `needs_evidence`。人工复核仍是必要环节。
-- 模型执行最多三并发、单次 90 秒、总计 600 秒、最多两轮及一次质疑。正文分块为 4,000 字符、重叠 200 字符，未覆盖部分和失败角色明确记录；部分完成不显示为完整完成。
-- API 重启后将未结束任务标记为中断的部分结果，保留已完成角色，等待显式重试；不会自动重发模型请求。SSE 支持按事件游标恢复读取。
-- DOCX/PDF 原生解析、Word 原生修订、OMML 往返、外部检索、查重/首创证明、`.tex` 编译、多用户协同、完整 token/费用核算和生产运维尚未完成。LaTeX API 只校验文本，不生成 PDF。
-
-See [the capability comparison and roadmap](docs/AGENT_COMPARISON.md) for the observed GitHub project comparisons and precise implementation boundary.
-
-## Running this verified candidate copy
-
-This folder is an independent candidate. The original workspace source is preserved. Open two PowerShell terminals in this candidate folder:
+分别在两个终端从项目根目录启动：
 
 ```powershell
-.\START_REVIEW.ps1 -Mode backend
+./START_REVIEW.ps1 -Mode backend
 ```
 
 ```powershell
-.\START_REVIEW.ps1 -Mode frontend
+./START_REVIEW.ps1 -Mode frontend
 ```
 
-Open `http://localhost:3001`; the candidate API runs at `http://localhost:8001`. 使用候选目录自己的 `backend/.venv`；启动器可读取本地 `backend/.env` 供后端使用，密钥文件不应进入源代码包。预备运行目录可能通过 junction 共享前端依赖，源代码归档不依赖该链接。源代码包排除 `.venv`、`node_modules`、数据库及生成构建文件。独立解压后按上方步骤创建完整后端环境，并在 `frontend` 执行 `npm ci`，再启动候选版；启动器不会自动下载依赖。
+打开 `http://localhost:3001`；API 为 `http://localhost:8001`。启动器会配置前端 API 地址。可选的 Docker Compose 服务属于后续基础设施预留，本地工作区使用 SQLite，无需先启动它们。
 
-详细 API 见 [后端说明](backend/README.md)。
+### 验证与打包
+
+```powershell
+./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-test.txt
+cd backend
+./.venv/Scripts/python.exe -m unittest discover -s tests -v
+cd ../frontend
+npm run lint
+node --test
+cd ..
+```
+
+在 Windows x64 上构建桌面版：
+
+```powershell
+./backend/.venv/Scripts/python.exe -m pip install -r desktop/requirements-build.txt
+./backend/.venv/Scripts/python.exe -m pip install fonttools==4.68.0
+./backend/.venv/Scripts/python.exe desktop/build_windows.py
+```
+
+脚本检查依赖版本、构建前端静态资源，再生成 `desktop/dist/研辩台.exe`。详细说明见 [桌面构建文档](desktop/README.md)。
+
+## 项目结构
+
+```text
+frontend/          Next.js、TypeScript 与文档编辑界面
+backend/           FastAPI、SQLite、规则检查、审查与导出
+desktop/           pywebview 桌面入口及 Windows 打包脚本
+docs/screenshots/  首版真实界面截图
+examples/          可导入的示例文档
+.github/           中文问题反馈与功能建议模板
+START_REVIEW.ps1   本地开发启动器
+```
+
+## 问题反馈与参与
+
+欢迎通过 [GitHub Issues](https://github.com/GYF-66/thesisdebate/issues/new/choose) 提交 Bug、功能建议和使用体验。请附上软件版本、操作系统、复现步骤与截图；文档兼容性问题可以提供不含私人信息的最小示例。
+
+参与开发请阅读 [贡献说明](CONTRIBUTING.md)。首版会持续完善文档兼容、排版体验和审查流程。
+
+## 友情链接
+
+[LINUX DO](https://linux.do/)
