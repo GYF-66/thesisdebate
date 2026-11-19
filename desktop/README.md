@@ -1,6 +1,6 @@
 # 研辩台 Windows 桌面版
 
-从 [v0.0.1 首版 Release](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1) 下载 `研辩台_0.0.1.exe` 后双击运行。程序为 Windows x64 单文件应用，内置 Python、FastAPI 后端和界面，无需另外安装 Node.js 或 Python。
+从 [v0.0.1 首版 Release](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1) 下载 `ThesisDebate_0.0.1.exe` 后双击运行。GitHub 附件使用英文文件名，与原始 `研辩台_0.0.1.exe` 的内容和 SHA-256 完全相同。程序为 Windows x64 单文件应用，内置 Python、FastAPI 后端和界面，无需另外安装 Node.js 或 Python。
 
 界面使用 Windows WebView2 Runtime；系统尚未安装时需先安装该运行环境。程序启动后在 `127.0.0.1` 自动选择本地端口，关闭窗口会停止本次本地服务。
 

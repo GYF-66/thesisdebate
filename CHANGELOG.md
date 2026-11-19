@@ -20,7 +20,7 @@
 
 ### 发布与反馈
 
-- 发布附件：`研辩台_0.0.1.exe`，内置 Python、后端与界面，使用 Windows WebView2 Runtime。
+- 发布附件：`ThesisDebate_0.0.1.exe`，与原始 `研辩台_0.0.1.exe` 内容相同，内置 Python、后端与界面，使用 Windows WebView2 Runtime。
 - 补充中文项目介绍、功能截图、源码运行与构建说明。
 - 开启 [Issues](https://github.com/GYF-66/thesisdebate/issues)，提供中文问题反馈与功能建议模板。
 

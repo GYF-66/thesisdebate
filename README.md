@@ -55,7 +55,7 @@
 
 ## 下载与开始使用
 
-1. 打开 [v0.0.1 首版发布页](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1)，下载附件 `研辩台_0.0.1.exe`。
+1. 打开 [v0.0.1 首版发布页](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1)，下载附件 `ThesisDebate_0.0.1.exe`（研辩台 Windows 版）。GitHub 下载文件名使用英文；其内容与原始文件 `研辩台_0.0.1.exe` 完全相同。
 2. 在 Windows x64 上运行。程序已内置 Python、后端与页面，无需安装 Node.js 或启动终端；系统需要具备 Microsoft Edge WebView2 Runtime。
 3. 新建文档，或导入 `.md`、`.txt`、`.docx` 文件。也可以使用 [示例论文](examples/论文示例.md) 体验本地格式检查。
 4. 打开格式检查，查看修改建议，确认后导出修订副本。需要多角色审查时，再通过顶部的渠道管理设置模型服务。
@@ -69,7 +69,7 @@ b1aff790b7e9e073f8bd49c6e4a2929b85d252fff952d9e2e830fecc539b4bca
 在 PowerShell 中可核对下载文件：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 './研辩台_0.0.1.exe'
+Get-FileHash -Algorithm SHA256 './ThesisDebate_0.0.1.exe'
 ```
 
 ## 一次完整的修订流程
