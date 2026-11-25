@@ -1,13 +1,13 @@
 # 研辩台 Windows 桌面版
 
-从 [v0.0.1 首版 Release](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1) 下载 `ThesisDebate_0.0.1.exe` 后双击运行。GitHub 附件使用英文文件名，与原始 `研辩台_0.0.1.exe` 的内容和 SHA-256 完全相同。程序为 Windows x64 单文件应用，内置 Python、FastAPI 后端和界面，无需另外安装 Node.js 或 Python。
+从 [v0.0.2 Release](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.2) 下载 `ThesisDebate_0.0.2.exe` 后双击运行。GitHub 附件使用英文文件名，与已验证的 `研辩台.exe` 的内容和 SHA-256 完全相同。程序为 Windows x64 单文件应用，内置 Python、FastAPI 后端和界面，无需另外安装 Node.js 或 Python。
 
 界面使用 Windows WebView2 Runtime；系统尚未安装时需先安装该运行环境。程序启动后在 `127.0.0.1` 自动选择本地端口，关闭窗口会停止本次本地服务。
 
 ## 开始使用
 
-1. 首次启动为空白工作区，可以新建文档，或导入 Markdown、TXT、DOCX。
-2. 编辑正文，选择适用模板，运行本地格式检查。
+1. 首次启动点击「用示例试一次」完成引导；也可以新建文档，或导入 Markdown、TXT、DOCX。
+2. 点击高亮的「选择规范」，上传 DOCX / 文字版 PDF 模板自动填写格式要求。确认选用后，核对预览并应用排版，再运行本地格式检查。
 3. 在修订建议中逐项或分组接受、保留与撤销，查看原文和修改稿的差异。
 4. 需要模型审查时，先在模型服务设置中配置兼容模型渠道，再启动审查。
 5. 调整字体与版式，按需要导出 Markdown、DOCX 或分页 PDF。

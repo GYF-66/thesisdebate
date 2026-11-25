@@ -37,7 +37,8 @@ class AgentProgressUpgradeTests(unittest.IsolatedAsyncioTestCase):
             return value
         result, events = await self.execute(provider=provider)
         checkpoints = [payload for kind, payload in events if kind == 'role_checkpoint' and payload['agent_id'] == 'judge' and 'batch_index' in payload]
-        self.assertEqual(len(result['findings']), 24)
+        self.assertEqual(len(result['findings']), 1)
+        self.assertEqual(len(result['findings'][0]['contributions']), 24)
         self.assertEqual(len(checkpoints), 2)
         self.assertEqual([item['progress']['completed_units'] for item in checkpoints], [1, 2])
         self.assertTrue(all(item['progress']['total_units'] == 2 and item['progress']['unit'] == 'batch' for item in checkpoints))

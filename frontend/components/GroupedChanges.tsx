@@ -16,6 +16,7 @@ export default function GroupedChanges<T extends GroupableChange>({changes, acti
   useEffect(() => setNextAt({}), [contextKey])
   return <div className="grouped-changes" key={contextKey}>
     {!!groups.length && <p className="change-group-count" role="status">{groups.length} 组建议 · {changes.length} 项修改</p>}
+    {!!groups.length && <div className="diff-legend" aria-label="修订颜色说明"><span className="legend-before">− 原文</span><span className="legend-after">＋ 建议</span><span className="legend-current">当前修改</span></div>}
     {groups.map(group => {
       const safe = group.items.every(item => LOW_RISK_RULES.includes(item.rule) && !blockedIds.includes(item.id) && !conflicts.has(item.id))
       const inLimit = group.items.length <= 500

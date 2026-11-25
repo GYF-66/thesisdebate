@@ -54,6 +54,7 @@ function hooks() {
 const fontHelpers = compile('lib/fonts.ts')
 const styleHelpers = compile('lib/documentStudio.ts', { './fonts': fontHelpers })
 const grouping = compile('lib/changeGrouping.ts')
+const lineSpacing = compile('components/LineSpacingControl.tsx')
 const result = (label = 'PDF') => ({ blob: new Blob(['%PDF-' + label]), limitations: [label + '说明'] })
 const issue = (name, replacement = '宋体') => ({ requested_font: name, reason: name + '缺少精确字体', suggested_font: replacement })
 const missing = (...issues) => new fontHelpers.FontConfirmationRequiredError('字体需要确认', issues)
@@ -70,7 +71,7 @@ function studioFixture(overrides = {}) {
     saveDocumentLayout: async (...args) => { saves.push(args); return { revision: ++revision, style: styleHelpers.cloneDocumentStyle(args[3]) } },
     exportDocument: (...args) => { calls.push(args); return exporter(...args) },
   }
-  const Studio = compile('components/DocumentStudio.tsx', { react: h.react, '../lib/documentStudio': helpers, '../lib/changeGrouping': grouping, '../lib/markdown': { parseMarkdown: text => ({ text }), editorExtensions: [] }, '@tiptap/react': { EditorContent() {}, useEditor() { return null } }, './FontPicker': { __esModule: true, default: Picker } }, {
+  const Studio = compile('components/DocumentStudio.tsx', { react: h.react, '../lib/documentStudio': helpers, '../lib/changeGrouping': grouping, '../lib/markdown': { parseMarkdown: text => ({ text }), editorExtensions: [] }, '@tiptap/react': { EditorContent() {}, useEditor() { return null } }, './LineSpacingControl': lineSpacing, './FontPicker': { __esModule: true, default: Picker } }, {
     document, HTMLElement: class HTMLElement {}, fetch: async () => ({ ok: true, json: async () => ({ retained: true, warnings: [] }) }),
     URL: { createObjectURL(blob) { const url = 'blob:test-' + created.length; created.push({ url, blob }); return url }, revokeObjectURL: url => revoked.push(url) },
     setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length },
@@ -178,7 +179,7 @@ async function main() {
     assert.equal(f.saves.length, 0)
     assert.equal(f.callbacks.length, callbacks)
     assert.equal(f.anchors.length, 1)
-    assert.equal(f.anchors[0].download, '论文-预期稿.pdf')
+    assert.equal(f.anchors[0].download, '论文-当前稿.pdf')
     assert.equal(f.timers[0].delay, 60000)
     assert.equal(confirmation(f.h.tree), undefined)
     f.export(); await f.h.settle()
@@ -196,7 +197,7 @@ async function main() {
     ['original content', f => f.h.update({ originalContent: '# 新原稿正文' })],
     ['document identity', f => f.h.update({ documentId: 'document-b' })],
     ['document epoch', f => f.h.update({ documentEpoch: 2 })],
-    ['export scope', f => f.select('导出范围', 'current')],
+    ['export scope', f => f.select('导出范围', 'expected')],
     ['export format', f => f.select('导出格式', 'md')],
     ['closed modal', f => f.h.update({ open: false })],
   ]

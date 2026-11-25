@@ -26,6 +26,7 @@ class HeadingAppearance(AppearanceModel):
     font_family: FontFamily = "黑体"
     font_size_pt: float = Field(default=18, ge=8, le=48)
     line_spacing: float = Field(default=1.5, ge=1, le=3)
+    line_spacing_pt: float = Field(default=0, ge=0, le=72)
     space_before_pt: float = Field(default=18, ge=0, le=72)
     space_after_pt: float = Field(default=12, ge=0, le=72)
 
@@ -39,6 +40,7 @@ class DocumentStyle(AppearanceModel):
     font_family: FontFamily = "宋体"
     font_size_pt: float = Field(default=12, ge=8, le=36)
     line_spacing: float = Field(default=1.5, ge=1, le=3)
+    line_spacing_pt: float = Field(default=0, ge=0, le=72)
     paragraph_before_pt: float = Field(default=0, ge=0, le=72)
     paragraph_after_pt: float = Field(default=6, ge=0, le=72)
     first_line_indent_pt: float = Field(default=24, ge=0, le=72)
@@ -58,11 +60,11 @@ class LayoutUpdate(AppearanceModel):
     def complete_style(cls, value):
         if isinstance(value, dict) and isinstance(value.get("style"), dict):
             style = value["style"]
-            missing = set(DocumentStyle.model_fields) - set(style)
+            missing = set(DocumentStyle.model_fields) - set(style) - {"line_spacing_pt"}
             if missing:
                 raise ValueError("排版设置必须完整提交，缺少：" + ", ".join(sorted(missing)))
             for heading in style.get("headings", []):
-                if isinstance(heading, dict) and set(HeadingAppearance.model_fields) - set(heading):
+                if isinstance(heading, dict) and set(HeadingAppearance.model_fields) - set(heading) - {"line_spacing_pt"}:
                     raise ValueError("每一级标题必须完整提交所有排版字段。")
         return value
 

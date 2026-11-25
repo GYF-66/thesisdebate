@@ -9,7 +9,7 @@ body:
     id: version
     attributes:
       label: 软件版本
-      placeholder: 例如：v0.0.1 Windows EXE / 源码运行及提交号
+      placeholder: 例如：v0.0.2 Windows EXE / 源码运行及提交号
     validations:
       required: true
   - type: input

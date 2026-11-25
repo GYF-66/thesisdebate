@@ -93,11 +93,10 @@ class TemplateToolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "规则字段"):
             resolve_rules(unsafe, [unsafe.rule_sources[0].id], [])
 
-    def test_unsupported_fixed_spacing_and_unknown_values_are_not_forced(self):
+    def test_fixed_spacing_is_preserved_and_unknown_values_are_not_forced(self):
         draft = extract_rules("正文行距固定值20磅\n正文字号100磅\n首行缩进2字符")
-        self.assertFalse(draft.rule_sources)
+        self.assertEqual([(item.field, item.value) for item in draft.rule_sources], [("document_style.line_spacing_pt", 20)])
         self.assertIsNone(draft.document_style)
-        self.assertTrue(any("固定值" in text for text in draft.warnings))
         self.assertTrue(any("超出支持范围" in text for text in draft.warnings))
 
     def test_text_specification_supports_cover_delivery_and_sixth_heading(self):

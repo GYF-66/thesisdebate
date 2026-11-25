@@ -9,6 +9,11 @@ import SchoolTemplatePanel from '../components/SchoolTemplatePanel'
 import FormatDiffPanel from '../components/FormatDiffPanel'
 import DocumentStudio from '../components/DocumentStudio'
 import DocumentAssistant from '../components/DocumentAssistant'
+import WorkspaceAssistant from '../components/WorkspaceAssistant'
+import LiteraturePanel from '../components/LiteraturePanel'
+import { EXAMPLE_CONTENT, EXAMPLE_NAME } from '../lib/exampleDocument'
+import type { TaskResult } from '../lib/workspaceAssistant'
+import './workspace-experience.css'
 import GroupedChanges from '../components/GroupedChanges'
 import { changeLocation, conflictingChangeIds, LOW_RISK_RULES } from '../lib/changeGrouping'
 import { DEFAULT_DOCUMENT_STYLE, documentStyleCss, type DocumentStyle } from '../lib/documentStudio'
@@ -31,6 +36,12 @@ type WorkspaceAgentTask = { document_id: string; review_id: string; format_run_i
 type CloseSnapshot = { id: string; name: string; content: string; editor_json: EditorNode; expected_revision: number; last_run_id: string | null; profile_id: string }
 type OutlineItem = { title: string; level: number; position: number }
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict'
+type GuideStep = 'document' | 'template' | 'scan' | 'review' | 'finish'
+type GuideRecord = { autoShown: boolean; open: boolean; step: GuideStep; runId: string | null; order: string[]; cursor: string; skipped: string[]; exported?: boolean }
+const GUIDE_STEPS: { id: GuideStep; label: string }[] = [
+  { id: 'document', label: '准备正文' }, { id: 'template', label: '选择规范' }, { id: 'scan', label: '检查文档' }, { id: 'review', label: '确认修改' }, { id: 'finish', label: '导出' },
+]
+const EMPTY_GUIDE_RECORD: GuideRecord = { autoShown: false, open: false, step: 'document', runId: null, order: [], cursor: '', skipped: [] }
 declare global { interface Window { __thesisCloseSnapshot?: () => CloseSnapshot | null; __thesisCloseResume?: (message: string) => void; __thesisSavePending?: boolean } }
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8001')
 const reviewStatus = { passed: '检查通过', needs_review: '待处理', blocked: '存在冲突' }
@@ -77,12 +88,20 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [studioOpen, setStudioOpen] = useState(false)
+  const [templatePreview, setTemplatePreview] = useState(false)
   const [documentStyle, setDocumentStyle] = useState<DocumentStyle>(DEFAULT_DOCUMENT_STYLE)
   const [profileStyles, setProfileStyles] = useState<Record<string, DocumentStyle | null>>({})
   const [suggestedContent, setSuggestedContent] = useState<string | null>(null)
   const [selectedProfileId, setSelectedProfileId] = useState('generic-thesis')
   const [profileNames, setProfileNames] = useState<Record<string, string>>({ 'generic-thesis': '通用学术论文规范' })
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [guideStep, setGuideStep] = useState<GuideStep>('document')
+  const [guideRunId, setGuideRunId] = useState<string | null>(null)
+  const [guideOrder, setGuideOrder] = useState<string[]>([])
+  const [guideCursor, setGuideCursor] = useState('')
+  const [guideSkipped, setGuideSkipped] = useState<string[]>([])
   const profileRef = useRef('generic-thesis')
+  const guideFlowRef = useRef({ open: false, step: 'document' as GuideStep, documentId: null as string | null })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const toolsMenuRef = useRef<HTMLDetailsElement>(null)
   const editorRef = useRef<Editor | null>(null)
@@ -92,6 +111,7 @@ export default function Home() {
   const saveRequiredRef = useRef(false), saveSerialRef = useRef(0), savePromiseRef = useRef<Promise<void> | null>(null)
   const saveConflictRef = useRef(false), closePausedRef = useRef(false), initializedRef = useRef(false)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  guideFlowRef.current = { open: guideOpen, step: guideStep, documentId: activeDocumentId }
   const editor = useEditor({
     extensions: editorExtensions, content: '', immediatelyRender: false,
     editorProps: { attributes: { class: 'paper-content', spellcheck: 'false', 'aria-label': '文档正文' } },
@@ -99,6 +119,7 @@ export default function Home() {
       if (!workspaceRef.current) return
       revisionRef.current += 1; dirtyRef.current = true; markdownRef.current = null
       setHasLocalEdits(true); refreshOutline(current); markDraftChanged()
+      if (guideFlowRef.current.open && guideFlowRef.current.step === 'document' && current.getText().trim()) setGuideStage('template')
     },
   })
   editorRef.current = editor
@@ -143,6 +164,105 @@ export default function Home() {
   function readContent() { return markdownRef.current ?? (editorRef.current ? serializeMarkdown(editorRef.current.getJSON()) : '') }
   function markDraftChanged() { saveRequiredRef.current = true; saveSerialRef.current += 1; setSaveTick(value => value + 1); if (!saveConflictRef.current) setSaveState('unsaved') }
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 2600) }
+  function readGuideRecord(documentId: string): GuideRecord {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('thesisdebate:review-guide:v1:' + documentId) || 'null') as Partial<GuideRecord> | null
+      const steps: GuideStep[] = ['document', 'template', 'scan', 'review', 'finish']
+      return { autoShown: parsed?.autoShown === true, open: parsed?.open === true,
+        step: steps.includes(parsed?.step as GuideStep) ? parsed!.step as GuideStep : 'document',
+        runId: typeof parsed?.runId === 'string' ? parsed.runId : null,
+        order: Array.isArray(parsed?.order) ? parsed!.order.filter((id): id is string => typeof id === 'string') : [],
+        cursor: typeof parsed?.cursor === 'string' ? parsed.cursor : '',
+        skipped: Array.isArray(parsed?.skipped) ? parsed!.skipped.filter((id): id is string => typeof id === 'string') : [],
+        exported: parsed?.exported === true,
+      }
+    } catch { return { ...EMPTY_GUIDE_RECORD } }
+  }
+  function writeGuideRecord(documentId: string, patch: Partial<GuideRecord>) {
+    try { localStorage.setItem('thesisdebate:review-guide:v1:' + documentId, JSON.stringify({ ...readGuideRecord(documentId), ...patch })) }
+    catch { /* Guide state is optional; document and review state stay in the local API. */ }
+  }
+  function setGuideStage(step: GuideStep) {
+    setGuideStep(step)
+    const documentId = guideFlowRef.current.documentId
+    if (documentId) writeGuideRecord(documentId, { step })
+  }
+  function exitGuide() {
+    setGuideOpen(false)
+    const documentId = guideFlowRef.current.documentId
+    if (documentId) writeGuideRecord(documentId, { open: false, autoShown: true })
+  }
+  function openGuideTemplates() {
+    setTemplatesOpen(true)
+    if (guideOpen && guideStep === 'document') setGuideStage('template')
+  }
+  function openGuideExport() { setStudioOpen(true) }
+  function reopenGuide() {
+    setGuideOpen(true)
+    if (activeDocumentId) writeGuideRecord(activeDocumentId, { open: true, autoShown: true })
+  }
+  function completeGuideExport(scope: 'original' | 'expected' | 'current') {
+    if (scope !== 'current' || !activeDocumentId) return
+    writeGuideRecord(activeDocumentId, { open: false, autoShown: true, exported: true, step: 'finish' })
+    setGuideOpen(false); notify('当前稿已导出。之后可从“使用引导”重新查看步骤。')
+  }
+  function startGuideReview(currentRunId: string, items: Change[]) {
+    const order = items.map(item => item.id), first = items.find(item => item.status === 'pending')?.id || ''
+    const step = first ? 'review' : 'finish'
+    setGuideRunId(currentRunId); setGuideOrder(order); setGuideCursor(first); setGuideSkipped([]); setGuideStep(step)
+    if (first) setActiveId(first)
+    if (activeDocumentId) writeGuideRecord(activeDocumentId, { runId: currentRunId, order, cursor: first, skipped: [], step })
+  }
+  function advanceGuideAfterDecision(change: Change, items: Change[]) {
+    const currentIndex = guideOrder.indexOf(change.id)
+    const nextId = guideOrder.slice(Math.max(0, currentIndex + 1)).find(id => items.some(item => item.id === id && item.status === 'pending') && !guideSkipped.includes(id))
+    if (nextId) {
+      const next = items.find(item => item.id === nextId)
+      setGuideCursor(nextId); setActiveId(nextId); setGuideStep('review')
+      if (next?.anchor.trim()) locateAgentQuote(next.anchor.trim(), next.occurrence)
+      if (activeDocumentId) writeGuideRecord(activeDocumentId, { cursor: nextId, step: 'review' })
+    } else {
+      setGuideCursor(''); setGuideStep('finish')
+      if (activeDocumentId) writeGuideRecord(activeDocumentId, { cursor: '', step: 'finish' })
+    }
+  }
+  function skipGuideChange() {
+    if (!active || active.status !== 'pending') return
+    const skipped = [...new Set([...guideSkipped, active.id])], index = guideOrder.indexOf(active.id)
+    const nextId = guideOrder.slice(Math.max(0, index + 1)).find(id => changes.some(item => item.id === id && item.status === 'pending') && !skipped.includes(id))
+    setGuideSkipped(skipped)
+    if (nextId) {
+      const next = changes.find(item => item.id === nextId)
+      setGuideCursor(nextId); setActiveId(nextId); setGuideStep('review')
+      if (next?.anchor.trim()) locateAgentQuote(next.anchor.trim(), next.occurrence)
+      if (activeDocumentId) writeGuideRecord(activeDocumentId, { skipped, cursor: nextId, step: 'review' })
+    } else {
+      setGuideCursor(''); setGuideStep('finish')
+      if (activeDocumentId) writeGuideRecord(activeDocumentId, { skipped, cursor: '', step: 'finish' })
+    }
+  }
+  function moveGuideStep(direction: -1 | 1) {
+    const index = GUIDE_STEPS.findIndex(item => item.id === guideStep), next = GUIDE_STEPS[Math.max(0, Math.min(GUIDE_STEPS.length - 1, index + direction))]
+    if (!next) return
+    if (next.id === 'review' && !runId) return setGuideStage('scan')
+    if (next.id === 'review' && guideRunId !== runId && runId) return startGuideReview(runId, changes)
+    setGuideStage(next.id)
+  }
+  function skipGuideStage() {
+    if (guideStep === 'template') return setGuideStage('scan')
+    if (guideStep === 'scan') return setGuideStage('finish')
+  }
+  function continueFromDocumentStep() {
+    if (!hasContent) { editor?.chain().focus().run(); return }
+    setGuideStage('template')
+  }
+  function continueGuidePending() {
+    const next = changes.find(item => item.status === 'pending')
+    if (!next) return
+    setGuideOpen(true); setGuideCursor(next.id); setActiveId(next.id); setGuideStep('review')
+    if (next.anchor.trim()) locateAgentQuote(next.anchor.trim(), next.occurrence)
+    if (activeDocumentId) writeGuideRecord(activeDocumentId, { open: true, cursor: next.id, step: 'review' })
+  }
   function summaryOf(document: WorkspaceDocument): WorkspaceSummary { const {id,name,document_type,updated_at,revision,last_run_id,head_hash,profile_id} = document; return {id,name,document_type,updated_at,revision,last_run_id,head_hash,profile_id} }
   function updateLibrary(document: WorkspaceDocument) { setDocuments(previous => [summaryOf(document), ...previous.filter(item => item.id !== document.id)].sort((a, b) => b.updated_at.localeCompare(a.updated_at))) }
   async function requestJson<T,>(path: string, init?: RequestInit): Promise<T> {
@@ -255,11 +375,16 @@ export default function Home() {
     setSuggestedContent(result.apiSuggested.preview)
     return mapped
   }
-  async function activateDocument(document: WorkspaceDocument, token: number) {
+  async function activateDocument(document: WorkspaceDocument, token: number, guideTrigger?: 'new' | 'import') {
     await requestJson('/workspace/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document_id: document.id }) })
     if (token !== operationRef.current) return
     workspaceRef.current = document; nameRef.current = document.name; lastRunRef.current = document.last_run_id; headHashRef.current = document.head_hash
     profileRef.current = document.profile_id || 'generic-thesis'; setSelectedProfileId(profileRef.current)
+    const storedGuide = readGuideRecord(document.id), shouldAutoOpen = !!guideTrigger && !storedGuide.autoShown
+    const initialGuide = shouldAutoOpen ? { ...storedGuide, autoShown: true, open: true, step: guideTrigger === 'import' ? 'template' as GuideStep : 'document' as GuideStep, runId: null, order: [], cursor: '', skipped: [] } : storedGuide
+    if (shouldAutoOpen) writeGuideRecord(document.id, initialGuide)
+    setGuideOpen(initialGuide.open); setGuideStep(initialGuide.step); setGuideRunId(initialGuide.runId)
+    setGuideOrder(initialGuide.order); setGuideCursor(initialGuide.cursor); setGuideSkipped(initialGuide.skipped)
     markdownRef.current = document.content; saveRequiredRef.current = false; saveConflictRef.current = false; closePausedRef.current = false
     revisionRef.current += 1; dirtyRef.current = !!document.content.trim(); setHasLocalEdits(dirtyRef.current)
     setActiveDocumentId(document.id); setDocumentName(document.name); setSaveState('saved'); setSaveError(''); setUploadWarnings([]); setLatex('')
@@ -269,7 +394,18 @@ export default function Home() {
     if (editorRef.current) refreshOutline(editorRef.current)
     updateLibrary(document)
     if (document.last_run_id) {
-      try { const result = await readRun(document.last_run_id); if (token !== operationRef.current) return; displayRun(document.last_run_id, result); dirtyRef.current = document.content !== (result.apiPreview.preview ?? result.apiPreview.source ?? ''); setHasLocalEdits(dirtyRef.current) }
+      try {
+        const result = await readRun(document.last_run_id); if (token !== operationRef.current) return
+        const mapped = displayRun(document.last_run_id, result)
+        if (initialGuide.runId !== document.last_run_id) {
+        const first = mapped.find(item => item.status === 'pending')?.id || ''
+        const step: GuideStep = initialGuide.step === 'review' ? first ? 'review' : 'finish' : initialGuide.step
+          const next = { runId: document.last_run_id, order: mapped.map(item => item.id), cursor: first, step }
+          setGuideRunId(next.runId); setGuideOrder(next.order); setGuideCursor(next.cursor); setGuideStep(next.step)
+          writeGuideRecord(document.id, next)
+        }
+        dirtyRef.current = document.content !== (result.apiPreview.preview ?? result.apiPreview.source ?? ''); setHasLocalEdits(dirtyRef.current)
+      }
       catch { if (token === operationRef.current) setRequestError('上次扫描记录暂时无法读取，正文已恢复。') }
     }
   }
@@ -307,7 +443,8 @@ export default function Home() {
         }
       }
       setTemplatesOpen(false); notify('已选用“' + profile.name + '”，运行格式扫描后查看建议')
-      if (profile.document_style && workspaceRef.current) setStudioOpen(true)
+      if (profile.document_style && workspaceRef.current) { setTemplatePreview(true); setStudioOpen(true) }
+      if (guideOpen && guideStep === 'template') setGuideStage('scan')
     } catch (error) { reportError(error, token); throw error }
     finally { finishOperation(token) }
   }
@@ -336,7 +473,43 @@ export default function Home() {
   }
   async function createDocument() {
     const token = beginOperation(); if (token === null) return
-    try { await flushDraft(); const document = await requestJson<WorkspaceDocument>('/workspace/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '未命名文档.md', content: '', profile_id: profileRef.current, editor_json: { type: 'doc', content: [{ type: 'paragraph' }] } }) }); await activateDocument(document, token); editorRef.current?.commands.focus() } catch (error) { reportError(error, token) } finally { finishOperation(token) }
+    try { await flushDraft(); const document = await requestJson<WorkspaceDocument>('/workspace/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '未命名文档.md', content: '', profile_id: profileRef.current, editor_json: { type: 'doc', content: [{ type: 'paragraph' }] } }) }); await activateDocument(document, token, 'new'); editorRef.current?.commands.focus() } catch (error) { reportError(error, token) } finally { finishOperation(token) }
+  }
+  async function createExample() {
+    const token = beginOperation(); if (token === null) return
+    try {
+      await flushDraft()
+      const document = await requestJson<WorkspaceDocument>('/workspace/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: EXAMPLE_NAME, content: EXAMPLE_CONTENT, profile_id: 'generic-thesis' }) })
+      await activateDocument(document, token, 'import')
+      setGuideStep('scan'); writeGuideRecord(document.id, { open: true, step: 'scan' })
+      setLeftRailOpen(false); setRightPanelOpen(false)
+      notify('练习文档已准备好，先运行一次检查。')
+    } catch (error) { reportError(error, token) } finally { finishOperation(token) }
+  }
+  async function prepareAssistant() {
+    const documentId = workspaceRef.current?.id
+    await flushDraft()
+    if (!documentId || documentId !== workspaceRef.current?.id) throw new Error('文档已切换，请在当前文档重试。')
+    return readContent()
+  }
+  async function syncAssistantRun(currentRunId: string) {
+    if (!workspaceRef.current || busyRef.current) return
+    const id = workspaceRef.current.id
+    const document = await requestJson<WorkspaceDocument>('/workspace/documents/' + encodeURIComponent(id))
+    if (workspaceRef.current?.id !== id || document.last_run_id !== currentRunId) return
+    const result = await readRun(currentRunId)
+    if (workspaceRef.current?.id !== id) return
+    workspaceRef.current = { ...workspaceRef.current, head_hash: document.head_hash, last_run_id: currentRunId }
+    headHashRef.current = document.head_hash; lastRunRef.current = currentRunId
+    displayRun(currentRunId, result)
+    dirtyRef.current = readContent() !== (result.apiPreview.preview ?? result.apiPreview.source ?? '')
+    setHasLocalEdits(dirtyRef.current); updateLibrary(document)
+  }
+  function assistantAction(action: string, result: TaskResult) {
+    if (action === 'settings') { setSettingsOpen(true); return }
+    if (action === 'export' || action === 'layout') { setStudioOpen(true); return }
+    if (result.review_id) setSelectedReviewId(result.review_id)
+    if (['changes', 'agents', 'assistance', 'literature'].includes(action)) openReviewPanel(action as ReviewTab)
   }
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return
@@ -346,7 +519,7 @@ export default function Home() {
     try {
       await flushDraft()
       const document = await requestJson<WorkspaceDocument & { source_type: string; warnings: string[] }>('/workspace/import?filename=' + encodeURIComponent(file.name) + '&profile_id=' + encodeURIComponent(profileRef.current), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file })
-      await activateDocument(document, token)
+      await activateDocument(document, token, 'import')
       setUploadWarnings(document.warnings || [])
       notify('已导入 ' + document.name)
     } catch (error) { reportError(error, token) } finally { finishOperation(token) }
@@ -360,7 +533,7 @@ export default function Home() {
     if (markdownRef.current !== previousContent) editorRef.current?.commands.setContent(parseMarkdown(markdownRef.current), { emitUpdate: false })
     if (editorRef.current) refreshOutline(editorRef.current)
     markDraftChanged(); await flushDraft()
-    return { count: mapped.length, preview: result.apiPreview }
+    return { count: mapped.length, preview: result.apiPreview, changes: mapped }
   }
   async function scanFormat() {
     if (!editor || !workspaceRef.current || !readContent().trim()) return
@@ -369,12 +542,12 @@ export default function Home() {
     try {
       await flushDraft(); requireCurrentEditor(token, revision)
       const run = await requestJson<FormatRunIdentity>('/format-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: profileRef.current, document_id: workspaceRef.current.id, document_version_id: 'draft-' + workspaceRef.current.revision, document_name: nameRef.current, document_type: 'markdown', content: readContent(), ...(headHashRef.current ? { expected_head_hash: headHashRef.current } : {}) }) })
-      requireCurrentEditor(token, revision); const refreshed = await refreshRun(run.id, token, revision); notify('发现 ' + refreshed.count + ' 条修改建议')
+      requireCurrentEditor(token, revision); const refreshed = await refreshRun(run.id, token, revision); startGuideReview(run.id, refreshed.changes); openReviewPanel('changes'); notify('发现 ' + refreshed.count + ' 条修改建议')
     } catch (error) { reportError(error, token) } finally { finishOperation(token) }
   }
-  async function decide(change: Change, decision: 'accept' | 'reject') {
+  async function decide(change: Change, decision: 'accept' | 'reject', advanceGuide = false) {
     if (!requireFreshRun()) return; const token = beginOperation(); if (token === null) return; const revision = revisionRef.current
-    try { await flushDraft(); await requestJson('/format-changes/' + change.id + '/decision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, expected_source_hash: review?.source_hash }) }); await refreshRun(runId!, token, revision); notify(decision === 'accept' ? '已接受修改' : '已保留原文') } catch (error) { reportError(error, token) } finally { finishOperation(token) }
+    try { await flushDraft(); await requestJson('/format-changes/' + change.id + '/decision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, expected_source_hash: review?.source_hash }) }); const refreshed = await refreshRun(runId!, token, revision); if (advanceGuide) advanceGuideAfterDecision(change, refreshed.changes); notify(decision === 'accept' ? '已接受修改' : '已保留原文') } catch (error) { reportError(error, token) } finally { finishOperation(token) }
   }
   async function decideGroup(candidates: Change[], decision: 'accept' | 'reject') {
     if (!requireFreshRun()) return
@@ -388,7 +561,8 @@ export default function Home() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision, change_ids: candidates.map(change => change.id), expected_source_hash: review?.source_hash, expected_preview_hash: review?.preview_hash }),
       })
-      await refreshRun(runId!, token, revision)
+      const refreshed = await refreshRun(runId!, token, revision)
+      if (guideOpen) startGuideReview(runId!, refreshed.changes)
       setLastBatch({ runId: runId!, batchId: result.batch_id })
       notify((decision === 'accept' ? '已接受并复检 ' : '已保留 ') + result.count + ' 项；可撤销本批')
     } catch (error) { reportError(error, token) } finally { finishOperation(token) }
@@ -473,7 +647,18 @@ export default function Home() {
     if (matches.length !== 1) return notify(matches.length > 1 ? '原文有多处匹配，请结合证据定位。' : '当前正文未找到该原文。')
     editor.chain().focus().setTextSelection(matches[0]).scrollIntoView().run()
   }
-  function focusChange(change: Change) { setActiveId(change.id); if (change.anchor.trim()) locateAgentQuote(change.anchor.trim(), change.occurrence) }
+  function focusChange(change: Change) {
+    setActiveId(change.id)
+    if (guideOpen && guideStep === 'review' && guideOrder.includes(change.id)) {
+      setGuideCursor(change.id)
+      if (change.status === 'pending' && guideSkipped.includes(change.id)) {
+        const skipped = guideSkipped.filter(id => id !== change.id)
+        setGuideSkipped(skipped)
+        if (activeDocumentId) writeGuideRecord(activeDocumentId, { cursor: change.id, skipped })
+      } else if (activeDocumentId) writeGuideRecord(activeDocumentId, { cursor: change.id })
+    }
+    if (change.anchor.trim()) locateAgentQuote(change.anchor.trim(), change.occurrence)
+  }
   function download(content: string, filename: string, contentType: string) { const url = URL.createObjectURL(new Blob([content], { type: contentType })); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000) }
   function exportMarkdown() { if (!activeDocumentId || !hasContent || busyRef.current) return; download(readContent(), (nameRef.current || '文档').replace(/\.[^.]+$/, '') + '.md', 'text/markdown;charset=utf-8') }
   function exportReport() { if (!requireFreshRun() || busyRef.current) return; download(JSON.stringify({ document_name: nameRef.current, review, changes, preview: previewData, agent_review: agentReview, agent_review_matches_current_snapshot: !!agentReview && agentReview.format_run_id === runId && agentReview.preview_hash === review?.preview_hash && agentReview.source_hash === review?.source_hash }, null, 2), nameRef.current.replace(/\.[^.]+$/, '') + '-修订报告.json', 'application/json;charset=utf-8') }
@@ -485,49 +670,55 @@ export default function Home() {
       <header className="topbar">
         <div className="brand"><button type="button" className="icon-button layout-toggle" onClick={toggleNavigation} aria-expanded={leftRailOpen} aria-controls="document-sidebar" aria-label={leftRailOpen ? '收起文档侧栏' : '展开文档侧栏'} title={leftRailOpen ? '收起文档侧栏' : '展开文档侧栏'} disabled={!activeDocumentId}><PanelLeft size={19}/></button><div className="brand-name">研辩台 <span>ThesisDebate</span></div></div>
         <div className="top-actions">
-          <AgentChannelSwitcher apiBase={API_BASE} onManage={() => setSettingsOpen(true)} disabled={busy}/>
-          <button type="button" className="ghost-button compact-action" onClick={() => openReviewPanel('agents')} disabled={!activeDocumentId} aria-controls="review-sidebar"><Layers3 size={16}/>Agent 审查</button>
-          <button type="button" className="ghost-button compact-action" onClick={() => openReviewPanel('assistance')} disabled={!activeDocumentId} aria-controls="review-sidebar"><History size={16}/>返修助手</button>
+          {activeDocumentId && <details className="model-connection"><summary>模型连接</summary><AgentChannelSwitcher apiBase={API_BASE} onManage={() => setSettingsOpen(true)} disabled={busy}/></details>}
+          {activeDocumentId && <button type="button" className="ghost-button compact-action" onClick={() => openReviewPanel('literature')} aria-controls="review-sidebar">查找文献</button>}
+          {activeDocumentId && <button type="button" className="soft-button compact-action" onClick={() => openReviewPanel('assistant')} aria-controls="review-sidebar">文档助手</button>}
           <details className="workspace-tools" ref={toolsMenuRef}><summary className="ghost-button" aria-label="打开工具菜单"><MoreHorizontal size={18}/><span>工具</span></summary><div className="workspace-tools-menu" aria-label="文档工具">
             <span className="tools-menu-label">文档</span>
             <button type="button" onClick={() => runTool(() => { void createDocument() })} disabled={busy || workspaceLoading}><FilePlus2 size={16}/>新建文档</button>
+            <button type="button" onClick={() => runTool(() => { void createExample() })} disabled={busy || workspaceLoading}><FileText size={16}/>用示例试一次</button>
             <button type="button" onClick={() => runTool(() => fileInputRef.current?.click())} disabled={busy || workspaceLoading}><FileUp size={16}/>导入文档</button>
             <button type="button" onClick={() => runTool(() => setTemplatesOpen(true))} disabled={busy || workspaceLoading}><FileText size={16}/>文档模板</button>
-            <button type="button" onClick={() => runTool(() => setStudioOpen(true))} disabled={!activeDocumentId || busy || workspaceLoading}><ArrowDownToLine size={16}/>预期效果与导出</button>
+            <button type="button" onClick={() => runTool(() => setStudioOpen(true))} disabled={!activeDocumentId || busy || workspaceLoading}><ArrowDownToLine size={16}/>调整排版与导出</button>
             <span className="tools-menu-label">显示与修订</span>
             <button type="button" onClick={() => runTool(() => setShowDiff(value => !value))} disabled={!activeDocumentId} aria-pressed={showDiff}><GitCompare size={16}/>{showDiff ? '收起正文对比' : '显示正文对比'}</button>
             <button type="button" onClick={() => runTool(() => setFormulaOpen(value => !value))} disabled={!activeDocumentId} aria-pressed={formulaOpen}><Sigma size={16}/>{formulaOpen ? '收起公式工具' : '插入公式'}</button>
             <button type="button" onClick={() => runTool(restoreOriginal)} disabled={!canDecide}><History size={16}/>恢复本次原稿</button>
             <button type="button" onClick={() => runTool(exportReport)} disabled={!canDecide || !hasContent}><ArrowDownToLine size={16}/>导出修订报告</button>
             <span className="tools-menu-label">设置</span>
-            <button type="button" onClick={() => runTool(() => setSettingsOpen(true))} aria-label="打开 Agent 设置"><Settings size={16}/>Agent 设置</button>
+            <button type="button" onClick={() => runTool(() => setSettingsOpen(true))} aria-label="打开 Agent 设置"><Settings size={16}/>模型设置</button>
+            <button type="button" onClick={() => runTool(reopenGuide)} disabled={!activeDocumentId}>使用引导</button>
           </div></details>
         </div>
       </header>
       {!activeDocumentId ? <section className="workspace-welcome" data-testid="workspace-empty">
-        {workspaceLoading ? <p role="status">正在打开工作区…</p> : <div className="welcome-card"><div className="welcome-mark"><FileText size={30} /></div><h1>开始一篇新文档</h1><p>新建文档，或导入 Markdown、TXT、DOCX 文件。</p><div className="welcome-actions"><button className="primary-button" onClick={createDocument} disabled={busy}><FilePlus2 size={16} />新建文档</button><button className="soft-button" onClick={() => fileInputRef.current?.click()} disabled={busy}><FileUp size={16} />导入文档</button></div>{requestError && <div className="review-alert" role="alert">{requestError}</div>}{documents.length > 0 && <div className="welcome-documents"><h2>最近文档</h2>{documents.map(document => <div className="welcome-document-row" key={document.id}><button onClick={() => switchDocument(document.id)} disabled={busy}><FileText size={14}/><span>{document.name}</span></button>{agentTasks[document.id] && <button className={'agent-task-badge task-' + agentTasks[document.id].status} onClick={() => void openDocumentReview(document.id)} disabled={busy} aria-label={'打开 ' + document.name + ' 的审查任务'}>{agentTaskLabel(agentTasks[document.id])}</button>}</div>)}</div>}</div>}
+        {workspaceLoading ? <p role="status">正在打开工作区…</p> : <div className="welcome-card"><span className="welcome-kicker">论文与课程报告 · 修订工作台</span><h1>把一篇初稿，<br/>改到心里有底。</h1><p>从一份练习文档开始：检查问题、核对原文，<br className="desktop-break"/>再确认一次修改。熟悉之后，带入自己的论文。</p><div className="welcome-actions"><button className="primary-button" onClick={() => void createExample()} disabled={busy}>用示例试一次 <span aria-hidden="true">→</span></button><button className="soft-button" onClick={() => fileInputRef.current?.click()} disabled={busy}><FileUp size={16} />导入我的文档</button></div><div className="welcome-secondary"><button className="text-action" onClick={() => void createDocument()} disabled={busy}>从空白文档开始</button><span>支持 DOCX、Markdown、TXT</span></div><ol className="welcome-route"><li><span>01</span><div><strong>找到问题</strong><p>按文档规范检查格式与结构</p></div></li><li><span>02</span><div><strong>核对修改</strong><p>看清原文、建议和依据再决定</p></div></li><li><span>03</span><div><strong>带走确认稿</strong><p>导出文档，保留修订记录</p></div></li></ol>{requestError && <div className="review-alert" role="alert">{requestError}</div>}{documents.length > 0 && <div className="welcome-documents"><h2>最近文档</h2>{documents.map(document => <div className="welcome-document-row" key={document.id}><button onClick={() => switchDocument(document.id)} disabled={busy}><FileText size={14}/><span>{document.name}</span></button>{agentTasks[document.id] && <button className={'agent-task-badge task-' + agentTasks[document.id].status} onClick={() => void openDocumentReview(document.id)} disabled={busy} aria-label={'打开 ' + document.name + ' 的审查任务'}>{agentTaskLabel(agentTasks[document.id])}</button>}</div>)}</div>}</div>}
       </section> : <>
-        <section className="workspace-toolbar"><div className="crumbs"><strong>文档工作区</strong><span className={'status-pill save-' + saveState} role="status">{saveLabels[saveState]}</span>{hasLocalEdits && runId && <span className="draft-indicator">正文已修改</span>}</div><div className="toolbar-actions"><button type="button" className="ghost-button compact-action" onClick={() => rightPanelOpen ? setRightPanelOpen(false) : openReviewPanel(tab)} aria-expanded={rightPanelOpen} aria-controls="review-sidebar"><PanelRight size={16}/>{rightPanelOpen ? '收起审查' : '展开审查'}</button><button className="primary-button" onClick={scanFormat} disabled={busy || !hasContent || saveConflictRef.current}><ScanLine size={16}/>{scanState || '扫描格式'}</button></div></section>
+        <section className="workspace-toolbar"><div className="crumbs"><strong>文档工作区</strong><span className={'status-pill save-' + saveState} role="status">{saveLabels[saveState]}</span>{hasLocalEdits && runId && <span className="draft-indicator">正文已修改</span>}</div><div className="toolbar-actions"><button className="ghost-button guide-toggle" onClick={guideOpen ? exitGuide : reopenGuide}>{guideOpen ? '收起引导' : '使用引导'}</button><button type="button" className="ghost-button compact-action" onClick={() => setStudioOpen(true)} disabled={!hasContent || busy}>排版与导出</button><button className="primary-button" onClick={scanFormat} disabled={busy || !hasContent || saveConflictRef.current}><ScanLine size={16}/>{scanState || '检查文档'}</button></div></section>
+        {guideOpen && <section className="quick-guide" data-guide-step={guideStep} aria-label="使用引导"><div className="guide-position"><small>下一步</small><span>{GUIDE_STEPS.findIndex(item => item.id === guideStep) + 1} / 5</span><strong>{GUIDE_STEPS.find(item => item.id === guideStep)?.label}</strong></div><p>{({ document: '先输入正文，也可以从工具菜单导入文档。', template: '上传学校的 Word / PDF 模板，自动填写格式要求。', scan: '运行本地检查，看看哪里需要修改。无需配置模型。', review: `右侧有 ${pending.length} 项待确认建议。先看原文和变化，再接受或保留。`, finish: pending.length ? `还有 ${pending.length} 项未确认。可继续核对，也可只导出当前确认稿。` : '修改已处理。导出当前稿，完成这次练习。' })[guideStep]}</p><div className="guide-actions">{guideStep === 'document' && <button className="soft-button" disabled={!hasContent || busy} onClick={continueFromDocumentStep}>正文已准备好</button>}{guideStep === 'template' && <><button className="soft-button" onClick={openGuideTemplates}>选择规范</button><button className="text-action" onClick={() => setGuideStage('scan')}>使用当前规范</button></>}{guideStep === 'scan' && <button className="soft-button" disabled={busy || !hasContent} onClick={() => void scanFormat()}>开始检查</button>}{guideStep === 'review' && <button className="soft-button" onClick={() => { openReviewPanel('changes'); if (active) focusChange(active) }}>查看建议</button>}{guideStep === 'finish' && <><button className="soft-button" onClick={openGuideExport}>导出当前稿</button>{pending.length > 0 && <button className="text-action" onClick={() => { continueGuidePending(); openReviewPanel('changes') }}>继续核对</button>}</>}<button className="icon-button" aria-label="退出使用引导" onClick={exitGuide}><X size={15}/></button></div></section>}
         <div className={'workspace-grid' + (!leftRailOpen ? ' nav-collapsed' : '') + (!rightPanelOpen ? ' review-collapsed' : '')}>
           {(leftRailOpen || rightPanelOpen) && <button type="button" className="panel-backdrop" aria-label="关闭侧栏，返回正文" onClick={() => { setLeftRailOpen(false); setRightPanelOpen(false) }}/>}
           <aside className="sidebar left-sidebar" id="document-sidebar" aria-label="文档与目录">
             <div className="side-head"><h2>我的文档</h2><button className="icon-button" onClick={() => setLibraryOpen(value => !value)} aria-label={libraryOpen ? '折叠文档列表' : '展开文档列表'} aria-expanded={libraryOpen}><ChevronDown size={16} className={!libraryOpen ? 'collapsed-chevron' : ''}/></button></div>
+            <div className="library-actions"><button onClick={() => void createDocument()} disabled={busy}><FilePlus2 size={14}/>新建</button><button onClick={() => fileInputRef.current?.click()} disabled={busy}><FileUp size={14}/>导入</button></div>
             {libraryOpen && <><label className="library-search-label" htmlFor="document-search">搜索文档</label><input id="document-search" className="library-search" type="search" value={libraryQuery} onChange={event => setLibraryQuery(event.target.value)} placeholder="按名称筛选" aria-label="搜索文档"/><nav className="document-library" aria-label="文档列表">{visibleDocuments().map(document => <div className="library-document-row" key={document.id}><button className={'library-document ' + (document.id === activeDocumentId ? 'active' : '')} onClick={() => switchDocument(document.id)} disabled={busy}><FileText size={15}/><span title={document.name}>{document.id === activeDocumentId ? documentName || '未命名文档' : document.name}</span></button>{agentTasks[document.id] && <button className={'agent-task-badge task-' + agentTasks[document.id].status} onClick={() => void openDocumentReview(document.id)} disabled={busy} aria-label={'打开 ' + document.name + ' 的审查任务'} title={agentTasks[document.id].review_id}>{agentTaskLabel(agentTasks[document.id])}</button>}</div>)}{visibleDocuments().length === 0 && <p className="review-empty">没有匹配的文档。</p>}</nav>{taskStatusError && <p className="task-status-error" role="status">审查状态暂不可用，请检查本地服务连接。</p>}</>}
             <div className="section-heading outline-heading"><span>文档目录 · {outline.length ? outline.length + ' 个标题' : '暂无标题'}</span><button className="icon-button" onClick={() => setOutlineOpen(value => !value)} aria-label={outlineOpen ? '折叠文档目录' : '展开文档目录'} aria-expanded={outlineOpen}><ChevronDown size={16} className={!outlineOpen ? 'collapsed-chevron' : ''}/></button></div>
             {outlineOpen && <nav className="outline" aria-label="文档目录">{outline.length ? outline.map((item, index) => <button key={index} className="outline-item" style={{paddingLeft: 12 + Math.min(item.level - 1, 4) * 12}} onClick={() => goToHeading(item)} title={item.title}><span>{item.title}</span></button>) : <p className="review-empty">正文中的标题会显示在这里。</p>}</nav>}
           </aside>
           <section className="editor-panel">
             <div className="editor-head"><div className="document-heading"><label htmlFor="document-name">文档名称</label><input id="document-name" aria-label="文档名称" value={documentName} onChange={event => renameDocument(event.target.value)} onBlur={() => { void flushDraft().catch(() => undefined) }} disabled={busy}/></div><button className="soft-button" onClick={() => { void flushDraft().then(() => notify('已保存')).catch(() => undefined) }} disabled={busy || saveState === 'saving' || saveState === 'conflict'}><Save size={14}/>保存</button></div>
-            <div className="active-template"><span>文档模板：{profileNames[selectedProfileId] || selectedProfileId}</span><button type="button" className="ghost-button" onClick={() => setTemplatesOpen(true)} disabled={busy}>切换模板</button></div>
+            <div className={'active-template' + (guideOpen && guideStep === 'template' ? ' guide-target' : '')}><span>文档模板：{profileNames[selectedProfileId] || selectedProfileId}</span><button type="button" className="ghost-button" onClick={() => setTemplatesOpen(true)} disabled={busy}>切换模板</button></div>
             {requestError && <div className="review-alert" role="alert">{requestError}</div>}{saveError && <div className="review-alert" role="alert">{saveError}{saveState === 'error' && <button onClick={() => { void flushDraft().catch(() => undefined) }}>重试保存</button>}{saveState === 'conflict' && <><button onClick={exportMarkdown} disabled={!hasContent}>导出当前副本</button><button onClick={reopenSavedDocument}>重新打开已保存版本</button></>}</div>}
             {hasLocalEdits && runId && <div className="review-alert warning" role="status">正文已修改，重新扫描后可继续处理建议。</div>}{uploadWarnings.length > 0 && <details className="import-notice"><summary>导入说明</summary><ul>{uploadWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
             <div className="paper-wrap"><article className="paper styled-manuscript" style={documentStyleCss(documentStyle)}><EditorContent editor={editor}/>{!hasContent && <p className="editor-placeholder">在这里输入正文，或导入文档开始编辑。</p>}</article></div>
             <div className="formula-bar" hidden={!formulaOpen}><div className="formula-label-left"><Sigma size={16}/>LaTeX 公式</div><input value={latex} onChange={event => setLatex(event.target.value)} placeholder="输入 LaTeX 公式" aria-label="LaTeX 公式源码" disabled={busy}/><button className="insert-button" onClick={insertFormula} disabled={busy || !latex.trim()}>插入公式</button><button type="button" className="icon-button" onClick={() => setFormulaOpen(false)} aria-label="收起公式工具"><X size={15}/></button>{formulaNotice && <span className="formula-notice" role="status"><Check size={14}/>{formulaNotice}</span>}</div>
             <div className="format-diff-container" hidden={!showDiff}><FormatDiffPanel apiBase={API_BASE} runId={runId} review={review} pendingCount={pending.length} dirty={hasLocalEdits} disabled={busy}/></div>
           </section>
-          <aside className="sidebar right-sidebar" id="review-sidebar" aria-label="审查工作区"><div className="review-rail-head"><span>审查工作区</span><button type="button" className="icon-button" onClick={() => setRightPanelOpen(false)} aria-label="收起审查面板"><PanelRight size={16}/></button></div>
-            <div className="review-progress"><h2>{hasLocalEdits && runId ? '等待重新扫描' : review ? reviewStatus[review.status] : '修订建议'}</h2><div className="review-counts"><span>{review?.applied_count ?? 0} 项已应用</span>{!!review?.blocked_change_ids.length && <span>{review.blocked_change_ids.length} 项冲突</span>}</div></div>
-            <div className="assistant-entry"><button type="button" onClick={() => setStudioOpen(true)} disabled={busy || !hasContent}><Settings size={15}/><span><strong>Agent 对话排版</strong><small>告诉我字体、字号和间距要求，先看预期效果</small></span></button></div><div className="tabs"><button className={tab === 'changes' ? 'tab active' : 'tab'} onClick={() => setTab('changes')}>修改建议{changes.length > 0 && <span>{pending.length}</span>}</button><button className={tab === 'agents' ? 'tab active' : 'tab'} onClick={() => setTab('agents')}>Agent 审查</button><button className={tab === 'review' ? 'tab active' : 'tab'} onClick={() => setTab('review')}>修订检查</button><button className={tab === 'assistance' ? 'tab active' : 'tab'} onClick={() => setTab('assistance')}>返修助手</button></div>
+          <aside className="sidebar right-sidebar" id="review-sidebar" aria-label="审查工作区"><div className="review-rail-head"><span>文档工具</span><button type="button" className="icon-button" onClick={() => setRightPanelOpen(false)} aria-label="收起审查面板"><PanelRight size={16}/></button></div>
+            <div className="tabs workspace-tabs" role="group" aria-label="文档工具导航">{([['assistant', '助手'], ['changes', '修改建议'], ['literature', '查文献'], ['agents', '内容审查'], ['assistance', '导师与资料'], ['review', '修订检查']] as const).map(([id, title]) => <button key={id} className={tab === id ? 'tab active' : 'tab'} aria-pressed={tab === id} onClick={() => setTab(id)}>{title}{id === 'changes' && pending.length > 0 && <span>{pending.length}</span>}</button>)}</div>
+            {tab === 'changes' && <div className="review-progress"><h2>{hasLocalEdits && runId ? '等待重新检查' : '逐项核对修改'}</h2><div className="review-counts"><span>{review?.applied_count ?? 0} 项已应用</span><span>{pending.length} 项待确认</span>{!!review?.blocked_change_ids.length && <span>{review.blocked_change_ids.length} 项冲突</span>}</div></div>}
+            {tab === 'assistant' && <WorkspaceAssistant key={activeDocumentId} apiBase={API_BASE} documentId={activeDocumentId} content={readContent()} disabled={busy || saveState === 'conflict'} prepare={prepareAssistant} onAction={assistantAction} onRun={syncAssistantRun} onStyle={setDocumentStyle} onLocate={locateAgentQuote}/>}
+            {tab === 'literature' && <LiteraturePanel key={activeDocumentId} apiBase={API_BASE} documentId={activeDocumentId} prepare={prepareAssistant} disabled={busy || saveState === 'conflict'}/>}
             <AgentReviewPanel apiBase={API_BASE} runId={runId} sourceHash={review?.source_hash ?? ''} previewHash={review?.preview_hash ?? ''} documentEpoch={documentEpoch} dirty={hasLocalEdits} busy={busy} hidden={tab !== 'agents'} selectedReviewId={selectedReviewId} applyVersion={applyAgentVersion} onLocate={locateAgentQuote} onReviewChange={setAgentReview}/>
             {tab === 'assistance' && <DocumentAssistant apiBase={API_BASE} documentId={activeDocumentId} documentName={documentName} content={readContent()} profileId={selectedProfileId} documentEpoch={documentEpoch} onLocate={locateAgentQuote}/>}
             {tab === 'changes' ? <>
@@ -535,7 +726,7 @@ export default function Home() {
                 {!!pending.length && <button type="button" className="bulk-accept-button" onClick={acceptAllPending} disabled={!canDecide || !pending.some(change => !review?.blocked_change_ids.includes(change.id) && ['paragraph.spacing','heading.spacing','heading.numbering'].includes(change.rule))} title="先在对比中检查；仅整批接受标题编号及空白格式项，引用和内容建议逐项审阅">确认低风险格式修改 <span>{pending.filter(change => !review?.blocked_change_ids.includes(change.id) && ['paragraph.spacing','heading.spacing','heading.numbering'].includes(change.rule)).length}</span></button>}
                 {lastBatch?.runId === runId && <button type="button" className="ghost-button" onClick={undoBatch} disabled={!canDecide}>撤销本批格式修改</button>}
                 {!changes.length && <p className="review-empty">{runId ? '未发现需要修改的内容。' : '扫描当前文档以查看修改建议。'}</p>}
-                <GroupedChanges changes={pending} activeId={activeId} contextKey={String(runId) + ':' + documentEpoch} disabled={!canDecide} blockedIds={review?.blocked_change_ids ?? []} onLocate={focusChange} onDecide={(change, decision) => { void decide(change, decision) }} onBatch={(items, decision) => { void decideGroup(items, decision) }}/>
+                <GroupedChanges changes={pending} activeId={activeId} contextKey={String(runId) + ':' + documentEpoch} disabled={!canDecide} blockedIds={review?.blocked_change_ids ?? []} onLocate={focusChange} onDecide={(change, decision) => { void decide(change, decision, guideOpen) }} onBatch={(items, decision) => { void decideGroup(items, decision) }}/>
                 {!!accepted.length && <details className="resolved-changes"><summary>已接受 · {accepted.length} 项</summary>{accepted.map(change => <button type="button" key={change.id} className="resolved-card accepted" onClick={() => focusChange(change)}><Check size={14}/><span>{change.title}</span><small>已接受</small></button>)}</details>}
                 {!!changes.filter(item => item.status === 'rejected').length && <details className="resolved-changes"><summary>已保留 · {changes.filter(item => item.status === 'rejected').length} 项</summary>{changes.filter(item => item.status === 'rejected').map(change => <button type="button" key={change.id} className="resolved-card rejected" onClick={() => focusChange(change)}><X size={14}/><span>{change.title}</span><small>已保留</small></button>)}</details>}
               </div>
@@ -544,7 +735,7 @@ export default function Home() {
         </div>
         <footer className="statusbar"><div><span className={'save-status save-' + saveState}>{saveLabels[saveState]}</span>{hasContent && <span>{editor?.getText().replace(/\s/g, '').length ?? 0} 字</span>}</div><div><button onClick={undoLast} disabled={!canDecide || !accepted.length}><RotateCcw size={13}/>撤销</button><button onClick={() => setStudioOpen(true)} disabled={!hasContent || busy}><ArrowDownToLine size={13}/>导出</button></div></footer>
       </>}
-      <DocumentStudio apiBase={API_BASE} open={studioOpen} onClose={() => setStudioOpen(false)} documentId={activeDocumentId} documentName={documentName} content={readContent()} originalContent={hasLocalEdits ? null : previewData?.source ?? null} suggestedContent={hasLocalEdits ? null : suggestedContent} profileStyle={profileStyles[selectedProfileId] ?? null} documentEpoch={documentEpoch} disabled={busy || workspaceLoading || saveState === 'conflict'} onStyleChange={setDocumentStyle}/>
+      <DocumentStudio apiBase={API_BASE} open={studioOpen} previewTemplateOnOpen={templatePreview} onClose={() => { setStudioOpen(false); setTemplatePreview(false) }} documentId={activeDocumentId} documentName={documentName} content={readContent()} originalContent={hasLocalEdits ? null : previewData?.source ?? null} suggestedContent={hasLocalEdits ? null : suggestedContent} profileStyle={profileStyles[selectedProfileId] ?? null} documentEpoch={documentEpoch} disabled={busy || workspaceLoading || saveState === 'conflict'} onStyleChange={setDocumentStyle} onExport={completeGuideExport}/>
       <AgentSettings apiBase={API_BASE} open={settingsOpen} onClose={() => setSettingsOpen(false)}/>
       <SchoolTemplatePanel apiBase={API_BASE} open={templatesOpen} selectedProfileId={selectedProfileId} onClose={() => setTemplatesOpen(false)} onSelect={selectSchoolTemplate} disabled={busy}/>
       {toast && <div className="toast"><Check size={15}/>{toast}</div>}

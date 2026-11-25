@@ -230,9 +230,12 @@ def _name_pattern(catalogue: FontCatalogue):
     return pattern, {font_key(name): family for name, family in spellings.items()}
 
 
-def match_font_name(text: str) -> str | None:
+_KNOWN_CATALOGUE = FontCatalogue([])
+
+
+def match_font_name(text: str, *, installed: bool = True) -> str | None:
     """Match complete longest names; never take 仿宋 out of 华文仿宋/仿宋_GB2312."""
-    pattern, spellings = _name_pattern(get_font_catalogue())
+    pattern, spellings = _name_pattern(get_font_catalogue() if installed else _KNOWN_CATALOGUE)
     for match in pattern.finditer(text):
         before = text[match.start() - 1] if match.start() else ""
         after = text[match.end():match.end() + 1]

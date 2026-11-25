@@ -4,9 +4,24 @@
 
 研辩台是一款面向学生、研究者与文档写作者的本地桌面应用。围绕一份文档，可以完成内容编辑、格式检查、多角色审查、修改核验与成果导出；每条建议都可以查看出处、决定是否接受，并在需要时撤销。
 
-[下载 Windows 首版 v0.0.1](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1) · [提交问题或建议](https://github.com/GYF-66/thesisdebate/issues/new/choose) · [更新记录](CHANGELOG.md)
+[下载 Windows v0.0.2](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.2) · [提交问题或建议](https://github.com/GYF-66/thesisdebate/issues/new/choose) · [更新记录](CHANGELOG.md)
 
-> 首次启动是空白工作区。下方截图来自本次发布的可执行文件，使用仓库中的示例文档；模型服务需要自行配置。
+> 首次启动可点击「用示例试一次」，跟随高亮引导完成检查、确认与导出。本地排版和模板分析无需配置模型。
+
+[v0.0.2 新手指南](docs/FIRST_USE.md) · [发布验证记录](docs/release-v0.0.2.json)
+
+## v0.0.2 更新
+
+- 上传 Word（DOCX）或文字版 PDF，自动填写有依据的学校、字体、字号、行距、缩进、页边距与标题参数；冲突项集中核对。
+- 固定磅值行距贯通预览、保存和导出；选用模板后自动载入排版预览。
+- 柔和暖白背景，原文淡红、建议淡绿、当前修改淡蓝；引导按钮和选项高亮更清楚。
+- 文档助手保留任务记录，支持检查、排版与文献检索；检索结果选择后加入资料。
+
+以下两张为 v0.0.2 EXE 的实际截图，使用内置练习文档。
+
+![v0.0.2 文档工作台](docs/screenshots/workbench-v0.0.2.png)
+
+![v0.0.2 新手入口](docs/screenshots/welcome-v0.0.2.png)
 
 ## 功能一览
 
@@ -18,10 +33,10 @@
 | 模型渠道库 | 保存多个服务配置，搜索、筛选、测试连接和切换当前渠道；已开始的任务保留自己的配置快照。 |
 | 排版与字体 | 设置字体、字号、行距、段距、页边距和六级标题；检索本机字体，预览排版并逐项确认调整。 |
 | 资料与返修辅助 | 导入资料、按关键词查找出处和摘录；整理导师任务、批注与答复，生成提交检查单和答辩准备问题。 |
-| 学校格式模板 | 选择文档类型，导入 TXT、Markdown 或带文字层的 PDF 规范，提取规则、处理冲突并人工确认。 |
+| 学校格式模板 | 上传 DOCX 模板或文字版 PDF 规范，自动识别并填写学校、字体、字号、行距等；保留出处，冲突项单独选择。 |
 | 成果导出 | 生成 Markdown、DOCX 与分页 PDF，选择原稿、预期稿或当前稿；提供修改对照和 DOCX 结构保护。 |
 
-## 功能截图
+## 功能截图（v0.0.1 历史截图）
 
 ### 文档工作台
 
@@ -55,21 +70,21 @@
 
 ## 下载与开始使用
 
-1. 打开 [v0.0.1 首版发布页](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.1)，下载附件 `ThesisDebate_0.0.1.exe`（研辩台 Windows 版）。GitHub 下载文件名使用英文；其内容与原始文件 `研辩台_0.0.1.exe` 完全相同。
+1. 打开 [v0.0.2 发布页](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.2)，下载附件 `ThesisDebate_0.0.2.exe`（研辩台 Windows 版）。GitHub 下载文件名使用英文；其内容与已验证文件 `研辩台.exe` 完全相同。
 2. 在 Windows x64 上运行。程序已内置 Python、后端与页面，无需安装 Node.js 或启动终端；系统需要具备 Microsoft Edge WebView2 Runtime。
-3. 新建文档，或导入 `.md`、`.txt`、`.docx` 文件。也可以使用 [示例论文](examples/论文示例.md) 体验本地格式检查。
+3. 点击「用示例试一次」体验引导，或新建文档、导入 `.md`、`.txt`、`.docx` 文件。也可以使用 [示例论文](examples/论文示例.md) 体验本地格式检查。
 4. 打开格式检查，查看修改建议，确认后导出修订副本。需要多角色审查时，再通过顶部的渠道管理设置模型服务。
 
-首版文件大小为 **51,883,624 字节（约 49.48 MiB）**，SHA-256：
+v0.0.2 文件大小为 **51,802,030 字节（约 49.40 MiB）**，SHA-256：
 
 ```text
-b1aff790b7e9e073f8bd49c6e4a2929b85d252fff952d9e2e830fecc539b4bca
+c8ed64d8055667df078ac3a14e915261435b7da5b00035b53c48c1bef03d881c
 ```
 
 在 PowerShell 中可核对下载文件：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 './ThesisDebate_0.0.1.exe'
+Get-FileHash -Algorithm SHA256 './ThesisDebate_0.0.2.exe'
 ```
 
 ## 一次完整的修订流程
@@ -98,7 +113,7 @@ Get-FileHash -Algorithm SHA256 './ThesisDebate_0.0.1.exe'
 
 ## 从源码运行
 
-源码与本次发布的 EXE 来自同一构建源。发布版本以 **v0.0.1** 为准，部分内部开发包的版本字段暂沿用 `0.1.0`。开发环境需要 Python 3.12、Node.js 20.9 或更高版本，以及 npm。
+源码与本次发布的 EXE 来自同一构建源。发布版本以 **v0.0.2** 为准，部分内部开发包的版本字段暂沿用 `0.1.0`。开发环境需要 Python 3.12、Node.js 20.9 或更高版本，以及 npm。
 
 在项目根目录安装依赖：
 
@@ -150,7 +165,7 @@ cd ..
 frontend/          Next.js、TypeScript 与文档编辑界面
 backend/           FastAPI、SQLite、规则检查、审查与导出
 desktop/           pywebview 桌面入口及 Windows 打包脚本
-docs/screenshots/  首版真实界面截图
+docs/screenshots/  各版本实际界面截图
 examples/          可导入的示例文档
 .github/           中文问题反馈与功能建议模板
 START_REVIEW.ps1   本地开发启动器
@@ -160,7 +175,7 @@ START_REVIEW.ps1   本地开发启动器
 
 欢迎通过 [GitHub Issues](https://github.com/GYF-66/thesisdebate/issues/new/choose) 提交 Bug、功能建议和使用体验。请附上软件版本、操作系统、复现步骤与截图；文档兼容性问题可以提供不含私人信息的最小示例。
 
-参与开发请阅读 [贡献说明](CONTRIBUTING.md)。首版会持续完善文档兼容、排版体验和审查流程。
+参与开发请阅读 [贡献说明](CONTRIBUTING.md)。后续会持续完善文档兼容、排版体验和审查流程。
 
 ## 友情链接
 

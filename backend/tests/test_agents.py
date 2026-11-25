@@ -61,7 +61,8 @@ class AgentEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "completed")
         self.assertEqual([call[0] for call in self.calls].count("judge"), 1)
         self.assertEqual(set(call[0] for call in self.calls), {item["id"] for item in engine.AGENT_ROLES})
-        self.assertEqual(len(result["findings"]), 4)
+        self.assertEqual(len(result["findings"]), 1)
+        self.assertEqual(len(result["findings"][0]["contributions"]), 4)
         self.assertTrue(result["coverage"]["complete"])
         for item in result["findings"]:
             self.assertEqual(item["start"], 2)

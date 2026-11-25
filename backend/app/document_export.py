@@ -178,14 +178,14 @@ def export_docx(content: str, style: DocumentStyle) -> bytes:
             setattr(section, edge + "_margin", Mm(getattr(style, "margin_" + edge + "_mm")))
     normal = document.styles["Normal"]
     _docx_font(normal.font, style.font_family, style.font_size_pt)
-    normal.paragraph_format.line_spacing = style.line_spacing
+    normal.paragraph_format.line_spacing = Pt(style.line_spacing_pt) if style.line_spacing_pt else style.line_spacing
     normal.paragraph_format.space_before = Pt(style.paragraph_before_pt)
     normal.paragraph_format.space_after = Pt(style.paragraph_after_pt)
     normal.paragraph_format.first_line_indent = Pt(style.first_line_indent_pt)
     for level, appearance in enumerate(style.headings, 1):
         heading = document.styles[f"Heading {level}"]
         _docx_font(heading.font, appearance.font_family, appearance.font_size_pt)
-        heading.paragraph_format.line_spacing = appearance.line_spacing
+        heading.paragraph_format.line_spacing = Pt(appearance.line_spacing_pt) if appearance.line_spacing_pt else appearance.line_spacing
         heading.paragraph_format.space_before = Pt(appearance.space_before_pt)
         heading.paragraph_format.space_after = Pt(appearance.space_after_pt)
         heading.paragraph_format.first_line_indent = Pt(0)
@@ -336,14 +336,14 @@ def export_pdf(content: str, style: DocumentStyle, warnings: list[str] | None = 
                                  leftMargin=style.margin_left_mm * mm, rightMargin=style.margin_right_mm * mm,
                                  title="论文导出", author="研辩台")
     body = ParagraphStyle("DocumentBody", fontName=body_font, fontSize=style.font_size_pt,
-                          leading=style.font_size_pt * style.line_spacing, firstLineIndent=style.first_line_indent_pt,
+                          leading=style.line_spacing_pt or style.font_size_pt * style.line_spacing, firstLineIndent=style.first_line_indent_pt,
                           spaceBefore=style.paragraph_before_pt, spaceAfter=style.paragraph_after_pt,
                           wordWrap="CJK", splitLongWords=True, alignment=TA_LEFT, allowWidows=0, allowOrphans=0)
     heading_styles = []
     for index, heading in enumerate(style.headings):
         heading_styles.append(ParagraphStyle(f"DocumentHeading{index + 1}", parent=body,
             fontName=resolved.get(heading.font_family, body_font), fontSize=heading.font_size_pt,
-            leading=heading.font_size_pt * heading.line_spacing, firstLineIndent=0,
+            leading=heading.line_spacing_pt or heading.font_size_pt * heading.line_spacing, firstLineIndent=0,
             spaceBefore=heading.space_before_pt, spaceAfter=heading.space_after_pt, keepWithNext=True))
     flat = ParagraphStyle("DocumentFlat", parent=body, firstLineIndent=0)
     story, counter = [], 0

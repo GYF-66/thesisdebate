@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 import hashlib
 import json
 import re
@@ -56,12 +57,13 @@ user_goal 仅用于选择本次审查重点，不得突破这里的修改边界�
 结构化规范，按其中适用规则检查；模板中的示例事实不是当前文档的事实。保留原有数字、
 公式、引用编号和文献来源；涉及这些内容的修改只能说明待人工核实的问题，不得直接替换。"""
 _ROLE_TASKS = {
-    "methods": "检查研究问题、研究设计、变量、控制、样本、统计和结论之间是否匹配；明确区分缺少信息与确定错误。",
-    "innovation": "检查贡献陈述是否具体、是否被本文证据支持、与材料的区别是否成立；不凭空判断世界首创或抄袭。",
-    "norms": "检查术语一致、引用与证据、论证结构和学术表达；不能根据部分摘录断言完整参考文献不存在。",
-    "comparator": "对照 original 与 manuscript，检查修订是否误改语义、数字、公式、引用或遗漏内容；窗口是独立切分而非严格对齐。",
+    "methods": "逐项核对问题—方法—样本—指标—结论的对应关系。明确区分信息不足、明确矛盾和仅需说明的局限；没有样本量或统计方法时要求补充信息，不推断研究错误。说明问题位置、字面依据、对结论的影响与可执行动作。",
+    "innovation": "只在用户选定且已取得文本的材料范围内比较贡献，说明本次比较范围与缺失资料。摘要只能支持摘要明确表述的内容。检查本文贡献是否具体、是否被证据支持；未做全领域检索，不判断世界首创或抄袭。",
+    "norms": "分开检查格式规范、文献元数据是否存在、文献原文是否支持论点。题录匹配不等于论点已验证。按确认模板检查术语、引用与结构；不能根据部分摘录断言完整参考文献不存在。",
+    "comparator": "对照 original 与 manuscript，并优先使用 paragraph_alignment 中的段落对应。exact_moved 只代表位置移动，不能当作遗漏。candidate 不是确定匹配，unmatched 不代表删除。核对语义、数字、公式、引用与遗漏；独立覆盖窗口不代表逐行对应。",
     "judge": "只裁决给定专家 finding_id。不得新增专家、发现或证据；失败/缺席的专家不能被描述成已完成。"
              "为本批每个 finding_id 提供且仅提供一次 assessment。可向已有专家提出至多三项具体质疑；"
+             "识别相同动作的重复建议，保留各角色的独立证据；同一位置的不同替换必须核对冲突。"
              "最后一轮仍有疑问时给 needs_evidence/conflict，不声称问题已解决。",
 }
 
@@ -170,6 +172,70 @@ def _parse_output(value: Any, schema: Type[BaseModel]) -> BaseModel:
         return schema.model_validate(value)
     except (ValidationError, ValueError, TypeError) as error:
         raise InvalidOutput() from error
+
+
+def align_paragraphs(source: str, preview: str) -> list[dict]:
+    """Give the comparator bounded candidates, including exact moved paragraphs.
+
+    Offsets are Python code points, internal to model context, not editor offsets.
+    Ambiguous/repeated passages are never promoted to unique correspondences.
+    """
+    def paragraphs(text):
+        return [{"start": m.start(), "end": m.end(), "text": m.group(),
+                 "normalized": re.sub(r"\s+", " ", m.group()).strip()}
+                for m in re.finditer(r"\S[^\n]*(?:\n(?!\s*\n)[^\n]+)*", text)]
+    before, after = paragraphs(source), paragraphs(preview)
+    exact = {}
+    for index, paragraph in enumerate(before):
+        exact.setdefault(paragraph["normalized"], []).append(index)
+    result = []
+    for index, paragraph in enumerate(after):
+        matches = exact.get(paragraph["normalized"], [])
+        mode = "ambiguous" if len(matches) > 1 else "exact_moved" if matches and matches[0] != index else "exact" if matches else "unmatched"
+        found = matches[0] if len(matches) == 1 else None
+        if not matches:
+            # Only a small local window is considered for fuzzy matching. Remote
+            # moved+edited paragraphs remain explicitly unknown rather than deleted.
+            candidates = range(max(0, index - 5), min(len(before), index + 6))
+            scores = [(SequenceMatcher(None, paragraph["normalized"][:1500], before[i]["normalized"][:1500], autojunk=True).ratio(), i)
+                      for i in candidates if abs(len(paragraph["normalized"]) - len(before[i]["normalized"])) <= 1000]
+            scores.sort(reverse=True)
+            if scores and scores[0][0] >= .65 and (len(scores) == 1 or scores[0][0] - scores[1][0] >= .1):
+                found, mode = scores[0][1], "candidate"
+        original = before[found] if found is not None else None
+        result.append({"status": mode, "manuscript_start": paragraph["start"], "manuscript_end": paragraph["end"],
+                       "manuscript_quote": paragraph["text"][:2000],
+                       "original_start": original["start"] if original else None,
+                       "original_quote": original["text"][:2000] if original else None})
+    return result
+
+
+def consolidate_findings(items: list[dict]) -> list[dict]:
+    """One actionable proposal per exact replacement; keep every role's reasoning."""
+    groups = {}
+    for item in items:
+        # Informational findings with no replacement can address different issues.
+        key = (item["quote"], item["replacement"], item["verdict"], item["title"] if item["replacement"] is None else "")
+        contribution = {k: item[k] for k in ("id", "agent_id", "title", "rationale", "evidence", "verdict")}
+        if key not in groups:
+            groups[key] = {**item, "contributions": [contribution], "agent_ids": [item["agent_id"]]}
+        else:
+            group = groups[key]
+            group["contributions"].append(contribution)
+            group["agent_ids"] = sorted(set(group["agent_ids"] + [item["agent_id"]]))
+            group["applicable"] = group["applicable"] and item["applicable"]
+            severity = {"low": 0, "medium": 1, "high": 2}
+            if severity[item["severity"]] > severity[group["severity"]]:
+                group["severity"] = item["severity"]
+    values = list(groups.values())
+    for item in values:
+        conflicts = [other["id"] for other in values if item["quote"] and other["quote"] == item["quote"] and
+                     other["replacement"] is not None and item["replacement"] is not None and other["replacement"] != item["replacement"]]
+        item["conflicting_finding_ids"] = conflicts
+        if conflicts:
+            item.update(applicable=False, verdict="conflict", requires_manual_review=True,
+                        risk_note="同一原文存在不同修改建议，请比较各角色依据后手动处理。")
+    return values
 
 
 def protected_content_changed(before: str, after: str | None) -> bool:
@@ -291,12 +357,13 @@ async def execute_review(snapshot: dict, emit: Emitter, cancel_event: asyncio.Ev
                                   "characters": len(text), "chunks": len(windows)})
             material_windows.extend({**chunk, "source_id": source_id} for chunk in windows)
         fingerprint = _hash(json.dumps({"sources": [(key, _hash(value)) for key, value in sorted(sources.items())],
-                                        "channel_identity": binding["channel_identity"], "contract_version": 2,
+                                        "channel_identity": binding["channel_identity"], "contract_version": 3,
                                         "review_profile_id": snapshot.get("review_profile_id", "academic"),
                                         "user_goal": snapshot.get("user_goal", ""),
                                         "confirmed_template": snapshot.get("confirmed_template", {})},
                                        ensure_ascii=False, sort_keys=True))
         preview_chunks, source_chunks = _chunks(preview), _chunks(source)
+        alignment = align_paragraphs(source, preview) if source != preview else []
         coverage.update({"preview_characters": len(preview), "source_characters": len(source),
                          "preview_chunks": len(preview_chunks), "source_chunks": len(source_chunks),
                          "materials": material_meta, "material_chunks": len(material_windows)})
@@ -368,7 +435,8 @@ async def execute_review(snapshot: dict, emit: Emitter, cancel_event: asyncio.Ev
             return {"snapshot_id": snapshot.get("id"), "phase": phase, "round": 1,
                     "window_index": index, "window_count": total,
                     "manuscript": manuscript, "original": original, "materials": materials,
-                    "window_alignment": "independent_chunks_not_aligned_lines",
+                    "window_alignment": "independent_coverage_with_paragraph_matches",
+                    "paragraph_alignment": [p for p in alignment if p["manuscript_start"] < manuscript["end"] and p["manuscript_end"] > manuscript["start"]][:12] if role == "comparator" else [],
                     "coverage": {"preview_chunks": len(preview_chunks), "source_chunks": len(source_chunks),
                                  "material_chunks": len(material_windows), "source_is_partial_window": True}}
 
@@ -629,5 +697,5 @@ async def execute_review(snapshot: dict, emit: Emitter, cancel_event: asyncio.Ev
     if status == "partial":
         missing_roles = "、".join(state["name"] for state in role_states.values() if state["status"] != "completed")
         summary = f"以下审查未完整完成：{missing_roles}。\n" + summary
-    return {"status": status, "agents": list(role_states.values()), "findings": list(findings.values()),
+    return {"status": status, "agents": list(role_states.values()), "findings": consolidate_findings(list(findings.values())),
             "summary": summary, "coverage": coverage, **binding, "role_results": role_results}

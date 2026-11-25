@@ -1,0 +1,27 @@
+{
+  "version": "v0.0.2",
+  "release_date": "2026-11-25",
+  "executable": "ThesisDebate_0.0.2.exe",
+  "executable_bytes": 51802030,
+  "executable_sha256": "c8ed64d8055667df078ac3a14e915261435b7da5b00035b53c48c1bef03d881c",
+  "platform": "Windows x64",
+  "source_provenance": "已验证的模板解析与引导版本；发布准备仅更新文档、截图与忽略规则。",
+  "verification": {
+    "backend_tests": 324,
+    "backend_exit_status": 0,
+    "frontend_test_files": 6,
+    "frontend_exit_status": 0,
+    "typescript_exit_status": 0,
+    "packaged_browser_exit_status": 0,
+    "native_smoke_exit_status": 0,
+    "docx_export_fixed_spacing_pt": 24,
+    "rollback_hash_match": true
+  },
+  "screenshots": {
+    "source": "本版 EXE，独立工作区中的内置练习文档。",
+    "files": [
+      "docs/screenshots/workbench-v0.0.2.png",
+      "docs/screenshots/welcome-v0.0.2.png"
+    ]
+  }
+}

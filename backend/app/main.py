@@ -946,6 +946,10 @@ from app.docx_preservation import router as source_protection_router
 app.include_router(source_protection_router)
 from app.batch_revision import router as batch_revision_router
 app.include_router(batch_revision_router)
+from app.literature_api import router as literature_router
+from app.workspace_assistant import router as workspace_assistant_router
+app.include_router(literature_router)
+app.include_router(workspace_assistant_router)
 
 
 if __name__ == "__main__":

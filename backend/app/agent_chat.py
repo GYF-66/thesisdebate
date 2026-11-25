@@ -51,7 +51,7 @@ class ChatPlan(BaseModel):
 
 LABELS = {
     "font_family": "正文字体", "font_size_pt": "正文字号（磅）",
-    "line_spacing": "正文行距（倍）", "paragraph_before_pt": "正文段前（磅）",
+    "line_spacing": "正文行距（倍）", "line_spacing_pt": "正文固定行距（磅）", "paragraph_before_pt": "正文段前（磅）",
     "paragraph_after_pt": "正文段后（磅）", "first_line_indent_pt": "首行缩进（磅）",
     "margin_top_mm": "上页边距（毫米）", "margin_bottom_mm": "下页边距（毫米）",
     "margin_left_mm": "左页边距（毫米）", "margin_right_mm": "右页边距（毫米）",
@@ -109,9 +109,13 @@ def local_plan(payload: ChatRequest) -> ChatPlan:
         heading_prop = {"paragraph_before_pt": "space_before_pt", "paragraph_after_pt": "space_after_pt"}.get(prop, prop)
         if scope is None or scope == []:
             result[prop] = value
+            if prop == "line_spacing":
+                result["line_spacing_pt"] = 0.0
         if scope is not None and prop in {"font_family", "font_size_pt", "line_spacing", "paragraph_before_pt", "paragraph_after_pt"}:
             for index in scope or list(range(6)):
                 result["headings"][index][heading_prop] = value
+                if prop == "line_spacing":
+                    result["headings"][index]["line_spacing_pt"] = 0.0
 
     for clause in re.split(r"[，,；;。\n]+", text):
         if not clause.strip():

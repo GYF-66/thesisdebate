@@ -74,6 +74,8 @@ def _unused(item: TemplateRuleSource) -> bool:
 
 
 def _get(draft: SchoolTemplateDraft, field: str):
+    if field == "institution":
+        return draft.institution
     if field in LIST_FIELDS:
         return list(getattr(draft, field))
     if field == "document_style":
@@ -95,7 +97,9 @@ def _get(draft: SchoolTemplateDraft, field: str):
 
 def _set(draft: SchoolTemplateDraft, field: str, value) -> SchoolTemplateDraft:
     payload = draft.model_dump(mode="json")
-    if field in LIST_FIELDS:
+    if field == "institution":
+        payload[field] = value
+    elif field in LIST_FIELDS:
         if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
             raise ValueError("章节、封面和提交要求必须是文字列表。")
         payload[field] = value
@@ -106,7 +110,7 @@ def _set(draft: SchoolTemplateDraft, field: str, value) -> SchoolTemplateDraft:
     elif field.startswith("document_style."):
         subfield = field.removeprefix("document_style.")
         style = draft.document_style.model_dump(mode="json") if draft.document_style else DocumentStyle().model_dump(mode="json")
-        heading = re.fullmatch(r"headings\.([0-5])\.(font_family|font_size_pt|line_spacing|space_before_pt|space_after_pt)", subfield)
+        heading = re.fullmatch(r"headings\.([0-5])\.(font_family|font_size_pt|line_spacing|line_spacing_pt|space_before_pt|space_after_pt)", subfield)
         if subfield in STYLE_FIELDS:
             style[subfield] = value
         elif heading:
@@ -137,6 +141,9 @@ def extract_rules(text: str, source_name: str = "粘贴的规范", document_kind
     draft.source_name = source_name
     found: list[TemplateRuleSource] = []
     warnings = list(draft.warnings)
+    # Separate scopes on a shared line, and retain explicit section context across lines.
+    text = re.sub(r"[。；;]\s*(?=(?:正文|[一二三四五六1-6]级标题))", "\n", text)
+    context_level = None
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line:
@@ -150,6 +157,12 @@ def extract_rules(text: str, source_name: str = "粘贴的规范", document_kind
             source = source_name + " · " + page.lstrip("[") + "页"
             line = line.strip()
         level = re.search(r"([一二三四五六1-6])级标题", line)
+        if level:
+            context_level = level[1]
+        elif re.search(r"正文|全文|全篇", line):
+            context_level = None
+        elif re.match(r"^(?:字体|字号|行距|段前|段后)", line) and context_level:
+            level = re.search(r"([一二三四五六1-6])级标题", context_level + "级标题")
         prefix = "document_style.headings." + str(LEVELS[level[1]]) + "." if level else "document_style."
         applicable = bool(level or re.search(r"正文|全文|全篇|字体|字号|行距|首行|页边距|段前|段后|font|line spacing", line, re.I))
 
@@ -165,14 +178,15 @@ def extract_rules(text: str, source_name: str = "粘贴的规范", document_kind
             found.append(rule(source, line, field, value))
 
         if applicable:
-            font = match_font_name(line)
+            # Template requirements do not depend on fonts installed on this PC.
+            font = match_font_name(line, installed=False)
             if font:
                 add(prefix + "font_family", font)
-            size = re.search(r"(小[初一二三四五]|[初一二三四五六])号", line)
+            size = re.search(r"(小[初一二三四五]|[初一二三四五六])号|(小[初一二三四五])", line)
             if not size:
                 size = re.search(r"(?:字体|字号|正文)\s*[:：为用采用]*\s*(小[初一二三四五])", line)
             if size:
-                add(prefix + "font_size_pt", SIZES[size[1]])
+                add(prefix + "font_size_pt", SIZES[size[1] or size[2]])
             else:
                 points = re.search(r"(?:字号|字体大小|font size)\s*[:：为用采用]*\s*(\d+(?:\.\d+)?)\s*(?:磅|pt)?", line, re.I)
                 if points:
@@ -180,8 +194,12 @@ def extract_rules(text: str, source_name: str = "粘贴的规范", document_kind
             spacing = re.search(r"(\d+(?:\.\d+)?)\s*倍(?:行距)?|行距\s*[:：为]*\s*(\d+(?:\.\d+)?)\s*倍", line)
             if spacing:
                 add(prefix + "line_spacing", float(spacing[1] or spacing[2]))
+                add(prefix + "line_spacing_pt", 0.0)
             elif re.search(r"单倍行距|双倍行距|两倍行距", line):
                 add(prefix + "line_spacing", 1.0 if "单倍" in line else 2.0)
+                add(prefix + "line_spacing_pt", 0.0)
+            elif (fixed := re.search(r"(?:固定值?\s*(?:行距)?|行距\s*[:：为]*\s*(?:固定值?)?)\s*(\d+(?:\.\d+)?)\s*(?:磅|pt)", line, re.I)) and "最小" not in line:
+                add(prefix + "line_spacing_pt", float(fixed[1]))
             elif re.search(r"(?:固定|最小)值?\s*(?:行距)?\s*\d+|行距.{0,8}\d+(?:\.\d+)?\s*(?:磅|pt|厘米|毫米)", line):
                 warnings.append("固定值/最小值行距暂不能表达，未强制转换：" + line[:120])
             for label, field in (("段前", "space_before_pt" if level else "paragraph_before_pt"),
@@ -195,7 +213,7 @@ def extract_rules(text: str, source_name: str = "粘贴的规范", document_kind
             elif re.search(r"首行(?:缩进)?\s*[二两2]\s*(?:个)?[字字符]", line):
                 warnings.append("首行按字符缩进需结合已确认字号换算；未将“两字”擅自固定为磅值。")
         for label, edge in (("上", "top"), ("下", "bottom"), ("左", "left"), ("右", "right")):
-            match = re.search(label + r"(?:页)?边距\s*[:：为]*\s*(\d+(?:\.\d+)?)\s*(厘米|毫米|cm|mm)", line, re.I)
+            match = re.search(label + (r"(?:页)?边距" if "页边距" not in line else r"(?:页边距|边距)?") + r"\s*[:：为]*\s*(\d+(?:\.\d+)?)\s*(厘米|毫米|cm|mm)", line, re.I)
             if match:
                 add("document_style.margin_" + edge + "_mm", float(match[1]) * (10 if match[2].lower() in {"厘米", "cm"} else 1))
         for pattern, field in ((r"(?:必须|应|需)?(?:包含|包括|设置)(?:以下)?(?:必要|必需)?章节\s*[:：]\s*(.+)", "required_sections"),
@@ -221,6 +239,15 @@ def extract_rules(text: str, source_name: str = "粘贴的规范", document_kind
                 numbering = "none"
             if numbering:
                 add("heading_numbering." + str(LEVELS[level[1]]), numbering)
+    from app.template_analysis import identity_sources
+    found.extend(identity_sources(text, source_name))
+    # Character indentation is converted only using one explicitly identified body size.
+    char_indent = re.search(r"首行(?:缩进)?\s*[:：为]*\s*([二两2])\s*(?:个)?[字字符]", text)
+    sizes = {item.value for item in found if item.field == "document_style.font_size_pt"}
+    if char_indent and len(sizes) == 1:
+        found.append(rule(source_name, char_indent[0], "document_style.first_line_indent_pt", float(next(iter(sizes))) * 2,
+                          "explicit", "按已识别的正文字号换算两字缩进。"))
+        warnings = [item for item in warnings if "首行按字符" not in item]
     sources = list(draft.rule_sources)
     known = {item.id for item in sources}
     for item in found:

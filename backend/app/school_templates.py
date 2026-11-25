@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
 
 from app.heading_numbering import DEFAULT_HEADING_STYLES, HeadingStyle, parse_prefix, unwrap_heading
-from app.document_layout import DocumentStyle, extract_docx_document_style
+from app.document_layout import DocumentStyle
 from app.document_profiles import DOCUMENT_KINDS, REVIEW_PROFILES
 
 
@@ -179,7 +179,8 @@ def import_template(filename: str, data: bytes) -> SchoolTemplateDraft:
                 inferred = _word_number_style(definition)
                 if inferred:
                     candidates[level - 1].add(inferred)
-            document_style, layout_warnings = extract_docx_document_style(reader, root)
+            from app.template_analysis import analyze_docx_style, fill_recognized, identity_sources
+            document_style, layout_warnings, style_sources = analyze_docx_style(reader, root, name)
             warnings = ["提取标题编号与可识别排版规则；分节分页、引用版式与未识别字段请确认后保存。"]
             result = list(DEFAULT_HEADING_STYLES)
             for index, choices in enumerate(candidates):
@@ -189,10 +190,33 @@ def import_template(filename: str, data: bytes) -> SchoolTemplateDraft:
                     warnings.append(f"第 {index + 1} 级出现多种编号，暂保留原编号，请手动选择学校规则。")
                 else:
                     warnings.append(f"未明确识别第 {index + 1} 级编号，暂保留原编号，可手动调整。")
-            from app.template_rules import sample_rule_sources
-            return SchoolTemplateDraft(name=PurePosixPath(name).stem[:120], heading_numbering=result,
+            from app.template_rules import sample_rule_sources, extract_rules
+            draft = SchoolTemplateDraft(name=PurePosixPath(name).stem[:120], heading_numbering=result,
                                        document_style=document_style, source_name=name,
-                                       rule_sources=sample_rule_sources(name, candidates, document_style),
+                                       rule_sources=sample_rule_sources(name, candidates, None) + style_sources,
                                        warnings=(warnings + layout_warnings)[:30])
+            # Read literal paragraph text including cover tables; headers may carry school identity.
+            paragraphs = ["".join(node.text or "" for node in p.iter() if _local(node.tag) == "t")
+                          for p in root.iter() if _local(p.tag) == "p"]
+            text = "\n".join(paragraphs)[:100000]
+            table_rows = [" ".join("".join(node.text or "" for node in cell.iter() if _local(node.tag) == "t")
+                                    for cell in row if _local(cell.tag) == "tc")
+                          for row in root.iter() if _local(row.tag) == "tr"]
+            text = (text + "\n" + "\n".join(table_rows))[:100000]
+            textual = extract_rules(text, name)
+            from app.document_import import _resolve_part
+            main = reader.main_part()
+            part = PurePosixPath(main)
+            for relation in reader.relationships(str(part.parent / "_rels" / (part.name + ".rels"))):
+                if relation.get("Type", "").endswith("/header") and relation.get("TargetMode", "").lower() != "external":
+                    header = reader.read_xml(_resolve_part(main, relation.get("Target", "")))
+                    lines = ["".join(node.text or "" for node in p.iter() if _local(node.tag) == "t")
+                             for p in header.iter() if _local(p.tag) == "p"]
+                    if not any(item.field == "institution" for item in textual.rule_sources):
+                        textual.rule_sources.extend(identity_sources("\n".join(lines), name + " · 页眉"))
+            # A sample's narrative is not a normative source: recognize only lines with
+            # formatting vocabulary, cover identity, and explicit checklist syntax.
+            draft.warnings = (draft.warnings + [w for w in textual.warnings if "未识别到" not in w])[:30]
+            return fill_recognized(draft, textual.rule_sources)
     except (zipfile.BadZipFile, OSError, RuntimeError, EOFError, OverflowError) as error:
         raise ValueError("DOCX 模板损坏或结构异常，请另存为有效 DOCX。") from error

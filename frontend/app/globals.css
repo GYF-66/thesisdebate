@@ -284,7 +284,8 @@ code,pre { font-family:var(--mono-font); }
 .diff-cell code { min-width:0; font:inherit; white-space:pre-wrap; overflow-wrap:anywhere; }
 .diff-source,.diff-preview { background:#ffffff; color:var(--secondary); }
 .diff-line-number { flex:0 0 28px; color:var(--muted); text-align:right; white-space:nowrap; user-select:none; font-size:13px; }
-.diff-replace .diff-source,.diff-delete .diff-source,.diff-replace .diff-preview,.diff-insert .diff-preview { background:#ffffff; color:var(--secondary); }
+.diff-replace .diff-source,.diff-delete .diff-source { background:var(--deleted-line); color:var(--deleted-ink); box-shadow:inset 3px 0 var(--deleted-marker); }
+.diff-replace .diff-preview,.diff-insert .diff-preview { background:var(--inserted-line); color:var(--inserted-ink); box-shadow:inset 3px 0 var(--inserted-marker); }
 .diff-cell.diff-gap { background:var(--raised); color:transparent; }
 .diff-cell.diff-gap .diff-line-number { color:var(--muted); }
 
@@ -304,9 +305,9 @@ code,pre { font-family:var(--mono-font); }
 .fdp-panel .aligned-diff { display:flex; flex-direction:column; min-height:0; flex:1; }
 .fdp-panel .diff-body { flex:1; min-height:0; max-height:none; overflow:auto; }
 .fdp-omission { padding:4px 12px; border-block:1px dashed var(--line); background:var(--raised); color:var(--muted); text-align:center; font-size:12px; }
-.fdp-current { outline:2px solid var(--strong-line); outline-offset:-2px; }
-.fdp-panel .diff-replace .diff-source,.fdp-panel .diff-delete .diff-source { background:#fff6f6; }
-.fdp-panel .diff-replace .diff-preview,.fdp-panel .diff-insert .diff-preview { background:#f2faf4; }
+.fdp-current { outline:2px solid var(--changed-marker); outline-offset:-2px; }
+.fdp-panel .diff-replace .diff-source,.fdp-panel .diff-delete .diff-source { background:var(--deleted-line); }
+.fdp-panel .diff-replace .diff-preview,.fdp-panel .diff-insert .diff-preview { background:var(--inserted-line); }
 
 /* Application settings and school numbering rules. */
 .settings-backdrop,.st-overlay { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(20,20,20,.35); }

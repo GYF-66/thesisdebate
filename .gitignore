@@ -1,6 +1,7 @@
 node_modules/
 .next/
 .venv/
+.venv-*/
 __pycache__/
 *.py[cod]
 .env
@@ -8,6 +9,7 @@ __pycache__/
 !.env.example
 dist/
 desktop/build/
+desktop/dist-*/
 target/
 src-tauri/target/
 backend/data/

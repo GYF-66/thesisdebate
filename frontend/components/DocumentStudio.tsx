@@ -6,6 +6,7 @@ import { ArrowDownToLine, Check, FileText, LoaderCircle, MessageSquare, RotateCc
 import { editorExtensions, parseMarkdown } from '../lib/markdown'
 import { chatDocumentStyle, cloneDocumentStyle, copyStyleField, DEFAULT_DOCUMENT_STYLE, documentStyleChanges, documentStyleCss, exportDocument, FontConfirmationRequiredError, getDocumentLayout, saveDocumentLayout, validateDocumentStyle, type FontIssue, type DocumentFont, type DocumentHeadingStyle, type DocumentStyle, type ExportFormat, type StudioMessage } from '../lib/documentStudio'
 import FontPicker from './FontPicker'
+import LineSpacingControl from './LineSpacingControl'
 import './document-studio.css'
 import { styleChangeGroup } from '../lib/changeGrouping'
 import './grouped-changes.css'
@@ -13,7 +14,8 @@ import './grouped-changes.css'
 type Props = {
   apiBase: string; open: boolean; onClose: () => void; documentId: string | null; documentEpoch: number
   documentName: string; content: string; originalContent: string | null; suggestedContent: string | null
-  profileStyle: DocumentStyle | null; disabled: boolean; onStyleChange?: (style: DocumentStyle) => void
+  previewTemplateOnOpen?: boolean; profileStyle: DocumentStyle | null; disabled: boolean; onStyleChange?: (style: DocumentStyle) => void
+  onExport?: (scope: ExportScope) => void
 }
 type ExportScope = 'original' | 'expected' | 'current'
 type ChatMessage = StudioMessage & { provider?: 'local' | 'configured'; warnings?: string[] }
@@ -23,7 +25,6 @@ const scopeNames = { original: '原稿', expected: '预期稿', current: '当前
 const errorMessage = (error: unknown) => error instanceof Error && error.message !== 'Failed to fetch' ? error.message : '无法连接本机排版服务，请重试。'
 const bodyFields: { field: Exclude<keyof DocumentStyle, 'font_family' | 'headings'>; label: string; min: number; max: number; step: number }[] = [
   { field: 'font_size_pt', label: '正文字号（磅）', min: 8, max: 36, step: 0.5 },
-  { field: 'line_spacing', label: '正文行距（倍）', min: 1, max: 3, step: 0.1 },
   { field: 'paragraph_before_pt', label: '正文段前（磅）', min: 0, max: 72, step: 1 },
   { field: 'paragraph_after_pt', label: '正文段后（磅）', min: 0, max: 72, step: 1 },
   { field: 'first_line_indent_pt', label: '首行缩进（磅）', min: 0, max: 72, step: 1 },
@@ -49,7 +50,7 @@ function ReadOnlyPaper({ content, style, label }: { content: string; style: Docu
   return <div className="ds-paper-scroll" ref={containerRef}><article className="ds-page ds-document" style={{ ...documentStyleCss(style), zoom: scale }} aria-label={label + '纸张'}>{parsed.error ? <p role="alert">{parsed.error}</p> : <EditorContent editor={editor}/>}</article></div>
 }
 
-export default function DocumentStudio({ apiBase, open, onClose, documentId, documentEpoch, documentName, content, originalContent, suggestedContent, profileStyle, disabled, onStyleChange }: Props) {
+export default function DocumentStudio({ apiBase, open, onClose, documentId, documentEpoch, documentName, content, originalContent, suggestedContent, profileStyle, previewTemplateOnOpen = false, disabled, onStyleChange, onExport }: Props) {
   const [currentStyle, setCurrentStyle] = useState<DocumentStyle>(() => cloneDocumentStyle(DEFAULT_DOCUMENT_STYLE))
   const [draftStyle, setDraftStyle] = useState<DocumentStyle>(() => cloneDocumentStyle(DEFAULT_DOCUMENT_STYLE))
   const [originalStyle, setOriginalStyle] = useState<DocumentStyle>(() => cloneDocumentStyle(DEFAULT_DOCUMENT_STYLE))
@@ -63,7 +64,7 @@ export default function DocumentStudio({ apiBase, open, onClose, documentId, doc
   const [chatInput, setChatInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [undoStyles, setUndoStyles] = useState<DocumentStyle[]>([])
-  const [exportScope, setExportScope] = useState<ExportScope>('expected')
+  const [exportScope, setExportScope] = useState<ExportScope>('current')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf')
   const [docxMode, setDocxMode] = useState<'preserve' | 'editable_copy'>('preserve')
   const [sourceInfo, setSourceInfo] = useState<{retained: boolean; warnings: string[]; mapped_paragraphs?: number} | null>(null)
@@ -116,10 +117,11 @@ export default function DocumentStudio({ apiBase, open, onClose, documentId, doc
     requestRef.current?.abort(); requestRef.current = controller
     const operation = ++operationRef.current
     setLoading(true); setRevision(null); setWorking(''); setError(''); setNotice(''); setExportLimitations([]); clearPdf()
-    if (baselineRef.current?.key !== contextKey) { setMessages([]); setChatInput(''); setUndoStyles([]); setPreviewMode('layout'); setExportScope('expected') }
+    if (baselineRef.current?.key !== contextKey) { setMessages([]); setChatInput(''); setUndoStyles([]); setPreviewMode('layout'); setExportScope('current') }
     void getDocumentLayout(apiBase, documentId, controller.signal).then(result => {
       if (operation !== operationRef.current || contextRef.current !== contextKey || controller.signal.aborted) return
-      setCurrentStyle(result.style); setDraftStyle(cloneDocumentStyle(result.style)); setRevision(result.revision)
+      setCurrentStyle(result.style); setDraftStyle(cloneDocumentStyle(previewTemplateOnOpen && profileStyle ? profileStyle : result.style)); setRevision(result.revision)
+      if (previewTemplateOnOpen && profileStyle) setNotice('已自动载入模板排版。核对预期稿后，点击“应用全部排版”。')
       if (baselineRef.current?.key !== contextKey) baselineRef.current = { key: contextKey, style: cloneDocumentStyle(result.style), content }
       setOriginalStyle(cloneDocumentStyle(baselineRef.current.style))
       setOpeningContent(baselineRef.current.content)
@@ -127,7 +129,7 @@ export default function DocumentStudio({ apiBase, open, onClose, documentId, doc
     }).catch(failure => { if (!controller.signal.aborted && operation === operationRef.current) setError(errorMessage(failure)) })
       .finally(() => { if (operation === operationRef.current) setLoading(false) })
     return () => { controller.abort(); requestRef.current?.abort(); operationRef.current++; clearPdf() }
-  }, [apiBase, open, documentId, documentEpoch, contextKey, loadNonce])
+  }, [apiBase, open, documentId, documentEpoch, contextKey, loadNonce, previewTemplateOnOpen])
 
   useEffect(() => {
     if (!open) return
@@ -239,6 +241,7 @@ export default function DocumentStudio({ apiBase, open, onClose, documentId, doc
       anchor.href = url; anchor.download = name + '.' + exportFormat; document.body.appendChild(anchor); anchor.click(); anchor.remove()
       setTimeout(() => URL.revokeObjectURL(url), 60000)
       setNotice('已导出' + scopeNames[exportScope] + ' ' + exportFormat.toUpperCase() + '。')
+      onExport?.(exportScope)
       setFontConfirmation(null)
       setExportLimitations(result.limitations)
     } catch (failure) { if (valid(request, true) && !confirmFonts(failure, 'export', substitutions)) setError(errorMessage(failure)) }
@@ -274,7 +277,7 @@ export default function DocumentStudio({ apiBase, open, onClose, documentId, doc
         </section>
         <aside className="ds-controls" aria-label="排版调整">
           <section className="ds-chat" aria-label="排版对话"><h3><MessageSquare size={16}/>告诉助手怎么排版</h3><p>填写要求后生成待应用排版，再决定是否接受。未配置模型时使用本地规则解析。</p><div className="ds-prompts"><button type="button" className="ghost-button" disabled={blocked} onClick={() => { void sendChat('正文宋体小四，1.5倍行距') }}>正文宋体小四，1.5倍行距</button><button type="button" className="ghost-button" disabled={blocked} onClick={() => { void sendChat('标题黑体三号，段后12磅') }}>标题黑体三号，段后12磅</button></div><div className="ds-messages" aria-live="polite">{messages.map((message, index) => <div className={'ds-message ds-message-' + message.role} key={index}><strong>{message.role === 'user' ? '排版要求' : message.provider === 'local' ? '本地规则' : '已配置模型'}</strong><p>{message.content}</p>{message.warnings?.map((warning, number) => <small key={number}>{warning}</small>)}</div>)}{working === 'chat' && <p role="status">正在生成排版建议…</p>}</div><form onSubmit={event => { event.preventDefault(); void sendChat() }}><textarea aria-label="排版对话输入" placeholder="例如：正文宋体小四，行距1.5倍，段后6磅，左页边距30毫米" value={chatInput} maxLength={2000} disabled={blocked} onChange={event => setChatInput(event.target.value)} rows={3}/><button type="submit" className="primary-button" disabled={blocked || !chatInput.trim()}><Send size={14}/>生成待应用排版</button></form></section>
-          <section className="ds-form" aria-label="直接设置排版"><div className="ds-section-title"><h3>直接调整排版</h3>{profileStyle && <button type="button" className="ghost-button" disabled={blocked} onClick={() => { try { setDraftStyle(validateDocumentStyle(profileStyle)); setNotice('已载入学校模板排版，请查看预期稿并确认应用。'); setError('') } catch (failure) { setError(errorMessage(failure)) } }}>预览学校模板排版</button>}</div><div className="ds-fields"><label>正文字体<FontPicker apiBase={apiBase} value={draftStyle.font_family} disabled={blocked} onChange={name => updateBody('font_family', name)} ariaLabel="正文字体"/></label>{bodyFields.map(({ field, label, min, max, step }) => <label key={field}>{label}<input aria-label={label} type="number" min={min} max={max} step={step} value={draftStyle[field]} disabled={blocked} onChange={event => updateBody(field, event.target.value)}/></label>)}</div><details><summary>页边距（A4）</summary><div className="ds-fields">{marginFields.map(({ field, label }) => <label key={field}>{label}<input aria-label={label} type="number" min={10} max={60} step={0.5} value={draftStyle[field]} disabled={blocked} onChange={event => updateBody(field, event.target.value)}/></label>)}</div></details><details><summary>各级标题字体、字号与间距</summary>{draftStyle.headings.map((heading, index) => <fieldset key={index}><legend>{index + 1} 级标题</legend><div className="ds-fields"><label>字体<FontPicker apiBase={apiBase} value={heading.font_family} disabled={blocked} onChange={name => updateHeading(index, 'font_family', name)} ariaLabel={(index + 1) + '级标题字体'}/></label>{([{ field: 'font_size_pt', label: '字号（磅）', min: 8, max: 48, step: 0.5 }, { field: 'line_spacing', label: '行距（倍）', min: 1, max: 3, step: 0.1 }, { field: 'space_before_pt', label: '段前（磅）', min: 0, max: 72, step: 1 }, { field: 'space_after_pt', label: '段后（磅）', min: 0, max: 72, step: 1 }] as const).map(({ field, label, min, max, step }) => <label key={field}>{label}<input aria-label={(index + 1) + '级标题' + label} type="number" min={min} max={max} step={step} value={heading[field]} disabled={blocked} onChange={event => updateHeading(index, field, event.target.value)}/></label>)}</div></fieldset>)}</details></section>
+          <section className="ds-form" aria-label="直接设置排版"><div className="ds-section-title"><h3>直接调整排版</h3>{profileStyle && <button type="button" className="ghost-button" disabled={blocked} onClick={() => { try { setDraftStyle(validateDocumentStyle(profileStyle)); setNotice('已载入学校模板排版，请查看预期稿并确认应用。'); setError('') } catch (failure) { setError(errorMessage(failure)) } }}>预览学校模板排版</button>}</div><div className="ds-fields"><label>正文字体<FontPicker apiBase={apiBase} value={draftStyle.font_family} disabled={blocked} onChange={name => updateBody('font_family', name)} ariaLabel="正文字体"/></label><LineSpacingControl label="正文行距" value={draftStyle} disabled={blocked} onChange={patch => setDraftStyle(value => ({ ...value, ...patch }))}/>{bodyFields.map(({ field, label, min, max, step }) => <label key={field}>{label}<input aria-label={label} type="number" min={min} max={max} step={step} value={draftStyle[field]} disabled={blocked} onChange={event => updateBody(field, event.target.value)}/></label>)}</div><details><summary>页边距（A4）</summary><div className="ds-fields">{marginFields.map(({ field, label }) => <label key={field}>{label}<input aria-label={label} type="number" min={10} max={60} step={0.5} value={draftStyle[field]} disabled={blocked} onChange={event => updateBody(field, event.target.value)}/></label>)}</div></details><details><summary>各级标题字体、字号与间距</summary>{draftStyle.headings.map((heading, index) => <fieldset key={index}><legend>{index + 1} 级标题</legend><div className="ds-fields"><LineSpacingControl label={(index+1)+'级标题行距'} value={heading} disabled={blocked} onChange={patch => setDraftStyle(value => { const next=cloneDocumentStyle(value); Object.assign(next.headings[index],patch); return next })}/><label>字体<FontPicker apiBase={apiBase} value={heading.font_family} disabled={blocked} onChange={name => updateHeading(index, 'font_family', name)} ariaLabel={(index + 1) + '级标题字体'}/></label>{([{ field: 'font_size_pt', label: '字号（磅）', min: 8, max: 48, step: 0.5 }, { field: 'space_before_pt', label: '段前（磅）', min: 0, max: 72, step: 1 }, { field: 'space_after_pt', label: '段后（磅）', min: 0, max: 72, step: 1 }] as const).map(({ field, label, min, max, step }) => <label key={field}>{label}<input aria-label={(index + 1) + '级标题' + label} type="number" min={min} max={max} step={step} value={heading[field]} disabled={blocked} onChange={event => updateHeading(index, field, event.target.value)}/></label>)}</div></fieldset>)}</details></section>
           <section className="ds-pending" aria-label="待应用排版"><div className="ds-section-title"><h3>待应用排版 {changes.length}</h3><button type="button" className="ghost-button" disabled={blocked || !undoStyles.length} onClick={() => { void applyStyle(undoStyles[undoStyles.length - 1], '已撤销上次排版', true) }}><RotateCcw size={13}/>撤销上次排版</button></div>{changes.length ? <><div className="ds-apply-all"><button type="button" className="primary-button" disabled={blocked} onClick={() => { void applyStyle(draftStyle, '已应用全部排版') }}><Check size={14}/>应用全部排版</button><button type="button" className="ghost-button" disabled={blocked} onClick={() => { setDraftStyle(cloneDocumentStyle(currentStyle)); setNotice('已保留当前排版。') }}>保留当前排版</button></div><div className="ds-style-changes">{styleGroups.map(group => <details className="ds-style-group" key={group.title}><summary>{group.title} · {group.items.length} 项{group.title === '标题版式' ? '（含字体与磅值间距）' : ''}</summary><table className="ds-change-table"><thead><tr><th>属性</th><th>当前</th><th>预期</th><th>处理</th></tr></thead><tbody>{group.items.map(change => <tr key={change.field} data-style-field={change.field}><td>{change.label}</td><td>{change.before}</td><td>{change.after}</td><td><button type="button" className="ghost-button" disabled={blocked} onClick={() => { void applyStyle(copyStyleField(currentStyle, draftStyle, change.field), '已应用' + change.label) }}>应用</button><button type="button" className="ghost-button" disabled={blocked} onClick={() => setDraftStyle(style => copyStyleField(style, currentStyle, change.field))}>保留</button></td></tr>)}</tbody></table><div className="ds-style-group-actions"><button type="button" className="primary-button" disabled={blocked} onClick={() => { void applyStyle(group.items.reduce((style, change) => copyStyleField(style, draftStyle, change.field), currentStyle), '已应用' + group.title) }}>应用此组</button><button type="button" className="ghost-button" disabled={blocked} onClick={() => setDraftStyle(style => group.items.reduce((result, change) => copyStyleField(result, currentStyle, change.field), style))}>保留此组</button></div></details>)}</div></> : <p className="ds-muted">尚无排版变化。可通过对话、表单或学校模板生成预期效果。</p>}</section>
         </aside>
       </div>

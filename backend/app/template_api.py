@@ -47,6 +47,7 @@ def parse_specification(filename: str, data: bytes, document_kind: str = "thesis
     if not data or len(data) > 10 * 1024 * 1024:
         raise ValueError("规范文件应为 1 字节至 10 MB。")
     suffix = PurePosixPath(name).suffix.lower()
+    sample_sources = []
     if suffix in {".txt", ".md", ".markdown"}:
         try:
             text = data.decode("utf-8-sig", errors="strict")
@@ -67,9 +68,14 @@ def parse_specification(filename: str, data: bytes, document_kind: str = "thesis
                 raise ValueError("请提供未加密的 PDF 规范。")
             if len(reader.pages) > 100:
                 raise ValueError("PDF 规范不能超过 100 页，请提取相关页后上传。")
-            parts, count = [], 0
+            parts, count, runs = [], 0, []
             for index, page in enumerate(reader.pages, 1):
-                extracted = page.extract_text() or ""
+                def visit(content, cm, tm, font, size):
+                    # Visitor matrices may include scaling; use the text y-axis scale.
+                    scale = ((cm[2] * tm[3] + cm[0] * tm[2]) ** 2 + (cm[3] * tm[3] + cm[1] * tm[2]) ** 2) ** .5
+                    if font and content.strip() and len(runs) < 20000:
+                        runs.append((content[:3000], str(font.get('/BaseFont', '')), float(size) * scale, index))
+                extracted = page.extract_text(visitor_text=visit) or ""
                 count += len(extracted)
                 if count > 100_000:
                     raise ValueError("规范文字不能超过 100000 字。")
@@ -77,13 +83,19 @@ def parse_specification(filename: str, data: bytes, document_kind: str = "thesis
             text = "\n".join(parts)
             if not text.strip():
                 raise ValueError("PDF 没有可读取的文字层，当前不进行 OCR；请上传文字版或粘贴规范。")
+            from app.template_analysis import pdf_sample_sources
+            sample_sources = pdf_sample_sources(runs, name)
         except ValueError:
             raise
         except Exception as error:
             raise ValueError("PDF 损坏或结构不受支持，请另存为文字版 PDF。") from error
     else:
         raise ValueError("规范材料支持 TXT、Markdown 或带文字层的 PDF。")
-    return extract_rules(text, name, document_kind, base_template)
+    from app.template_analysis import fill_recognized
+    draft = extract_rules(text, name, document_kind, base_template)
+    if suffix == '.pdf':
+        draft.warnings.append('PDF 的学校要求优先采用明文；重复正文可识别实际字体和字号。未识别的行距、页边距与标题层级请核对。扫描图片需要先转为带文字层的 PDF。')
+    return draft if base_template else fill_recognized(draft, sample_sources)
 
 
 @router.post("/extract", response_model=SchoolTemplateDraft)
