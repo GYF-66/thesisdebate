@@ -1,0 +1,47 @@
+{
+  "version": "v0.0.3",
+  "date": "2026-11-26",
+  "executable": {
+    "name": "ThesisDebate_0.0.3.exe",
+    "bytes": 54324057,
+    "sha256": "0c347b8cefaf78cfd131db8c16bea38df702ff8e5a6ec1374b828b5d03d7e639"
+  },
+  "verified": {
+    "backend_tests": 231,
+    "markdown_list_tests": 13,
+    "native_pdf_headings": 7,
+    "heading_levels": [
+      1,
+      2,
+      3,
+      2,
+      1,
+      2,
+      2
+    ],
+    "native_eight_pages": true,
+    "reload_and_close_save": true,
+    "scan_revision_three_exports_restart": true
+  },
+  "source_mapping": {
+    "frontend": "validated frontend files",
+    "backend": "validated backend",
+    "desktop": "validated desktop, non-frozen frontend paths adapted"
+  },
+  "packaging_adjustments": [
+    "Source resources use frontend/out",
+    "Build frontend directory is frontend/",
+    "Test requirements reuse pypdf pin in requirements.txt"
+  ],
+  "limits": [
+    "Scans require OCR",
+    "Complex layout and unusual headings need review",
+    "Navigation outline, no printed page-number TOC",
+    "Paid external model quality not tested"
+  ],
+  "source_branch": "release/v0.0.3",
+  "source_runtime_pdf_verified": true,
+  "source_backend_tests": 231,
+  "source_frontend_list_tests": 13,
+  "main_branch_policy": "Publish the accepted eight-page desktop candidate on its own version branch; retain main and historical tags."
+}

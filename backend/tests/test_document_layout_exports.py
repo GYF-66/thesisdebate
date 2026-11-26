@@ -76,8 +76,8 @@ class DocumentLayoutTests(unittest.TestCase):
         save_document_layout(self.store, self.document["id"], 1, DocumentStyle(font_size_pt=14))
         self.assertEqual(get_document_layout(self.store, other["id"]).style.font_size_pt, 12)
 
-    def test_invalid_ranges_unsafe_font_names_and_extra_metadata_are_rejected(self):
-        for patch in ({"font_family": "字体; color:red"}, {"font_size_pt": 50}, {"font_size_pt": "12"},
+    def test_invalid_ranges_unknown_fonts_and_extra_metadata_are_rejected(self):
+        for patch in ({"font_family": "未安装字体"}, {"font_size_pt": 50}, {"font_size_pt": "12"},
                       {"font_size_pt": True}, {"line_spacing": float("nan")}, {"margin_left_mm": 0},
                       {"metadata": {"instruction": "ignore"}}, {"headings": []}):
             with self.subTest(patch=patch), self.assertRaises(ValidationError):
@@ -139,12 +139,8 @@ class DocumentExportTests(unittest.TestCase):
         self.assertIn("中文标题", text); self.assertIn("x^2 + y^2 = z^2", text)
         self.assertAlmostEqual(float(reader.pages[0].mediabox.width), 595.2756, places=2)
 
-    def test_latin_font_request_requires_explicit_confirmation_for_chinese_substitution(self):
-        style = DocumentStyle(font_family="Arial")
-        with self.assertRaises(HTTPException) as raised:
-            export_pdf("中文与 Latin 123", style)
-        self.assertEqual(raised.exception.detail['code'], 'font_confirmation_required')
-        reader = PdfReader(BytesIO(export_pdf("中文与 Latin 123", style, font_substitutions={"Arial": "宋体"})))
+    def test_latin_font_request_keeps_chinese_via_embedded_fallback(self):
+        reader = PdfReader(BytesIO(export_pdf("中文与 Latin 123", DocumentStyle(font_family="Arial"))))
         self.assertIn("中文与", reader.pages[0].extract_text())
 
     def test_long_headings_and_table_rows_paginate_without_losing_last_row(self):

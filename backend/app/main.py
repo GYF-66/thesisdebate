@@ -20,8 +20,7 @@ from app.heading_numbering import (
     DEFAULT_HEADING_STYLES, HeadingStyle, clean_duplicate_prefix, format_heading,
     heading_body, is_unnumbered_heading, parse_prefix, unwrap_heading,
 )
-from app.school_templates import SchoolTemplateDraft, TemplateRuleSource
-from app.document_profiles import DOCUMENT_KINDS, DEFAULT_SECTIONS
+from app.school_templates import SchoolTemplateDraft
 from app.document_layout import DocumentStyle
 
 
@@ -63,13 +62,6 @@ class FormatProfile(BaseModel):
     source_name: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
     document_style: DocumentStyle | None = None
-    document_kind: str = "thesis"
-    review_profile_id: str = "academic"
-    required_sections: List[str] = Field(default_factory=list)
-    cover_fields: List[str] = Field(default_factory=list)
-    submission_checklist: List[str] = Field(default_factory=list)
-    rule_sources: List[TemplateRuleSource] = Field(default_factory=list)
-    parent_template_id: str | None = None
 
 
 class FormatRunCreate(BaseModel):
@@ -95,15 +87,13 @@ class FormatRun(BaseModel):
     accepted_count: int
     rejected_count: int
     requested_rules: List[str] = Field(default_factory=list)
+    rules_explicit: bool = False
     created_at: str
     completed_at: Optional[str] = None
     source_hash: Optional[str] = None
     document_id: str = ""
     base_version_id: Optional[str] = None
     current_version_id: Optional[str] = None
-    document_kind: str = "thesis"
-    review_profile_id: str = "academic"
-    template_snapshot: dict = Field(default_factory=dict)
 
 
 class Anchor(BaseModel):
@@ -225,15 +215,6 @@ PROFILES: Dict[str, FormatProfile] = {
         updated_at="2026-01-10",
     ),
 }
-for _kind, _label in DOCUMENT_KINDS.items():
-    if _kind == "thesis":
-        continue
-    PROFILES["preset-" + _kind] = PROFILES["generic-thesis"].model_copy(update={
-        "id": "preset-" + _kind, "name": _label + "模板", "institution": "研辩台默认模板",
-        "description": "可按正式要求补充的" + _label + "预设；章节清单供确认，不代表学校要求。",
-        "document_kind": _kind, "review_profile_id": "general", "required_sections": DEFAULT_SECTIONS[_kind],
-        "heading_numbering": ["preserve"] * 6,
-    })
 RUNS: Dict[str, FormatRun] = {}
 CHANGES: Dict[str, FormatChange] = {}
 SOURCES: Dict[str, str] = {}
@@ -447,12 +428,8 @@ def build_preview(source: str, changes: Sequence[FormatChange], document_version
     edits, _ = checked_edits(source, changes, document_version_id)
     preview = source
     applied: List[str] = []
-    written = set()
     for edit in sorted(edits, key=lambda item: (item.start, item.end - item.start), reverse=True):
-        identity = (edit.start, edit.end, edit.replacement)
-        if identity not in written:
-            preview = preview[:edit.start] + edit.replacement + preview[edit.end:]
-            written.add(identity)
+        preview = preview[:edit.start] + edit.replacement + preview[edit.end:]
         applied.append(edit.change_id)
     return preview, list(reversed(applied))
 
@@ -587,21 +564,12 @@ def create_school_template(payload: SchoolTemplateDraft) -> FormatProfile:
     from app.agent_api import get_store
     from app.school_templates import save_profile
     defaults = PROFILES["generic-thesis"]
-    if any(item.status == "conflict" and not item.note.startswith("未采用") for item in payload.rule_sources):
-        raise HTTPException(409, "请先处理模板规则冲突。")
-    parent = resolve_format_profile(payload.parent_template_id) if payload.parent_template_id else None
-    if payload.parent_template_id and parent is None:
-        raise HTTPException(422, "派生模板的原版本不存在。")
     profile = FormatProfile(
         id="school-" + uuid4().hex[:12], name=payload.name, institution=payload.institution,
-        version=now_iso() if parent else "1.0", description="文档自定义标题、章节与排版规则；每次审查绑定此模板版本。",
+        version="1.0", description="学校自定义标题及排版规则；确认编号后扫描，在预期效果中比较排版。",
         rules_count=defaults.rules_count, rules=defaults.rules, updated_at=now_iso(),
         heading_numbering=payload.heading_numbering, custom=True,
         source_name=payload.source_name, warnings=payload.warnings, document_style=payload.document_style,
-        document_kind=payload.document_kind, review_profile_id=payload.review_profile_id,
-        required_sections=payload.required_sections, cover_fields=payload.cover_fields,
-        submission_checklist=payload.submission_checklist, rule_sources=payload.rule_sources,
-        parent_template_id=payload.parent_template_id,
     )
     save_profile(get_store(), profile.model_dump(mode="json"))
     return profile
@@ -657,10 +625,9 @@ def _create_format_run(payload: FormatRunCreate, origin: str = "scan") -> Format
         accepted_count=0,
         rejected_count=0,
         requested_rules=list(payload.requested_rules or []),
+        rules_explicit=payload.requested_rules is not None,
         created_at=now_iso(),
         source_hash=source_digest(payload.content or ""),
-        document_kind=profile.document_kind, review_profile_id=profile.review_profile_id,
-        template_snapshot=profile.model_dump(mode="json"),
     )
     if payload.content is None:
         source = ""
@@ -935,21 +902,9 @@ from app.document_export import router as export_router
 from app.agent_chat import router as chat_router
 app.include_router(layout_router)
 app.include_router(export_router)
+from app.workbench_api import router as workbench_router
+app.include_router(workbench_router)
 app.include_router(chat_router)
-from app.document_fonts import router as fonts_router
-app.include_router(fonts_router)
-from app.template_api import router as template_tools_router
-from app.assistance_api import router as assistance_router
-app.include_router(template_tools_router)
-app.include_router(assistance_router)
-from app.docx_preservation import router as source_protection_router
-app.include_router(source_protection_router)
-from app.batch_revision import router as batch_revision_router
-app.include_router(batch_revision_router)
-from app.literature_api import router as literature_router
-from app.workspace_assistant import router as workspace_assistant_router
-app.include_router(literature_router)
-app.include_router(workspace_assistant_router)
 
 
 if __name__ == "__main__":

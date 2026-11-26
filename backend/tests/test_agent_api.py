@@ -383,9 +383,7 @@ class AgentAPITests(unittest.IsolatedAsyncioTestCase):
                     "evidence": [{"source_id": "manuscript", "quote": text}], "verdict": "supported"}]
             return result
         api.PROVIDER_OVERRIDE = deletion_provider
-        # Plain text can still be explicitly deleted; protected numeric data
-        # is covered by the separate manual-verification acceptance test.
-        run = await self.create_run("研究方法：采用质性访谈。\n")
+        run = await self.create_run()
         baseline = self.store.get_head(run["document_id"])
         review, guard = await self.create_review(run)
         calls_before_accept = len(self.calls)
@@ -486,125 +484,6 @@ class AgentAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recovered["role_results"], checkpoints)
         self.assertEqual(self.store.events(review["id"])[-1]["type"], "review.interrupted")
         self.assertEqual(api.TASKS, {})
-
-    async def test_progress_is_persisted_while_later_window_is_running(self):
-        entered, release = asyncio.Event(), asyncio.Event()
-
-        async def provider(role, instructions, context):
-            if role == "methods" and context.get("window_index") == 1:
-                entered.set()
-                await release.wait()
-            return await self.provider(role, instructions, context)
-
-        api.PROVIDER_OVERRIDE = provider
-        run = await self.create_run("甲" * 9000)
-        review, _ = await self.create_review(run, finish=False)
-        await asyncio.wait_for(entered.wait(), timeout=5)
-        current = (await self.client.get(f"/agent-reviews/{review['id']}")).json()
-        role = next(item for item in current["agents"] if item["id"] == "methods")
-        self.assertEqual(current["status"], "running")
-        self.assertEqual(role["status"], "running")
-        self.assertEqual(role["progress"]["completed_units"], 1)
-        self.assertEqual(role["progress"]["total_units"], 3)
-        self.assertTrue(role["started_at"])
-        self.assertTrue(role["progress"]["updated_at"])
-        replay = (await self.client.get(f"/agent-reviews/{review['id']}/progress-events")).json()
-        self.assertTrue(any(item["type"] == "role_checkpoint" and
-                            item["payload"].get("agent_id") == "methods" for item in replay))
-        release.set()
-        await self.finish()
-
-    async def test_terminal_progress_replays_every_event_with_safe_metadata(self):
-        run = await self.create_run("甲" * 40000)
-        review, _ = await self.create_review(run)
-        self.assertEqual(review["status"], "completed")
-        records = self.store.events(review["id"])
-        self.assertGreater(len(records), 40)
-        self.assertTrue(any("role_result" in item["payload"] for item in records))
-        response = await self.client.get(f"/agent-reviews/{review['id']}/progress-events")
-        self.assertEqual(response.status_code, 200, response.text)
-        replay = response.json()
-        self.assertEqual([item["id"] for item in replay], [item["id"] for item in records])
-        self.assertTrue(all(item["created_at"] for item in replay))
-        self.assertTrue(all("role_result" not in item["payload"] and
-                            "role_results" not in item["payload"] for item in replay))
-        cursor = replay[20]["id"]
-        resumed = (await self.client.get(f"/agent-reviews/{review['id']}/progress-events?after={cursor}")).json()
-        self.assertEqual(resumed, [item for item in replay if item["id"] > cursor])
-
-    async def test_general_context_goal_and_original_template_survive_accept_and_restore(self):
-        run = await self.create_run()
-        baseline = self.store.get_head(run["document_id"])
-        template = {"name": "课程实验报告", "heading_numbering": ["preserve"] * 6,
-                    "required_sections": ["实验目的", "实验结果"]}
-        original = main.RUNS[run["id"]]
-        main.RUNS[run["id"]] = original.model_copy(update={
-            "document_kind": "lab_report", "review_profile_id": "general", "template_snapshot": template})
-        api.persist_format_state()
-        context = (await self.client.get("/agent-review-context?format_run_id=" + run["id"])).json()
-        self.assertEqual(context["roles"][0]["name"], "结构完整性审查官")
-        self.assertEqual(context["template_name"], template["name"])
-        self.assertNotIn("confirmed_template", context)
-        goal, seen = "保留事实，按实验报告模板改善结构", []
-
-        async def provider(role, instructions, model_context):
-            seen.append(model_context)
-            return await self.provider(role, instructions, model_context)
-
-        api.PROVIDER_OVERRIDE = provider
-        guard = await self.guard(run["id"])
-        response = await self.client.post("/agent-reviews", json={"format_run_id": run["id"],
-            **guard, "user_goal": goal})
-        self.assertEqual(response.status_code, 202, response.text)
-        review_id = response.json()["id"]
-        await self.finish()
-        review = (await self.client.get(f"/agent-reviews/{review_id}")).json()
-        self.assertEqual(review["user_goal"], goal)
-        self.assertEqual(review["review_profile_id"], "general")
-        self.assertTrue(seen)
-        self.assertTrue(all(value["user_goal"] == goal and value["confirmed_template"] == template for value in seen))
-        with patch.object(main, "make_content_changes", wraps=main.make_content_changes) as make_changes:
-            accepted = await self.accept(review, guard)
-            self.assertEqual(make_changes.call_args.args[4], template["heading_numbering"])
-        await self.finish()
-        accepted_run = main.RUNS[accepted["format_run_id"]]
-        self.assertEqual(accepted_run.template_snapshot, template)
-        current_guard = await self.guard(accepted_run.id)
-        with patch.object(main, "make_content_changes", wraps=main.make_content_changes) as make_changes:
-            response = await self.client.post(
-                f"/format-runs/{accepted_run.id}/versions/{baseline['id']}/restore", json=current_guard)
-            self.assertEqual(response.status_code, 200, response.text)
-            self.assertEqual(make_changes.call_args.args[4], template["heading_numbering"])
-        restored = response.json()
-        await self.finish()
-        restored_run = main.RUNS[restored["format_run_id"]]
-        self.assertEqual(restored_run.template_snapshot, template)
-        self.assertEqual(restored_run.document_kind, "lab_report")
-        self.assertEqual(restored_run.review_profile_id, "general")
-        followup = self.store.get_review(restored["followup_review"]["id"])
-        self.assertEqual(followup["user_goal"], goal)
-        self.assertEqual(followup["snapshot"]["confirmed_template"], template)
-        api.restore_format_state()
-        self.assertEqual(main.RUNS[restored_run.id].template_snapshot, template)
-
-    async def test_legacy_numeric_suggestion_cannot_bypass_manual_verification(self):
-        run = await self.create_run()
-        review, guard = await self.create_review(run)
-        saved = self.store.get_review(review["id"])
-        finding = saved["findings"][0]
-        preview = saved["snapshot"]["preview"]
-        start = preview.index("样本10人")
-        finding.update(quote="样本10人", replacement="样本20人", applicable=True,
-                       verdict="supported", start=main.utf16_length(preview[:start]),
-                       end=main.utf16_length(preview[:start] + "样本10人"))
-        self.store.put_review(saved)
-        before = self.store.list_versions(run["document_id"])
-        response = await self.client.post(
-            f"/agent-reviews/{review['id']}/findings/{finding['id']}/decision",
-            json={**guard, "decision": "accept"})
-        self.assertEqual(response.status_code, 409, response.text)
-        self.assertIn("人工核对", response.json()["detail"])
-        self.assertEqual(self.store.list_versions(run["document_id"]), before)
 
 
 if __name__ == "__main__":

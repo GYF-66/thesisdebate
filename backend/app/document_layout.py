@@ -6,27 +6,20 @@ from pathlib import PurePosixPath
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from app.document_fonts import validate_font_name
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-FontFamily = str
+FontFamily = Literal["宋体", "黑体", "仿宋", "楷体", "微软雅黑", "Times New Roman", "Arial"]
 
 
 class AppearanceModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
-
-    @field_validator("font_family", check_fields=False)
-    @classmethod
-    def valid_font_family(cls, value: str) -> str:
-        return validate_font_name(value)
 
 
 class HeadingAppearance(AppearanceModel):
     font_family: FontFamily = "黑体"
     font_size_pt: float = Field(default=18, ge=8, le=48)
     line_spacing: float = Field(default=1.5, ge=1, le=3)
-    line_spacing_pt: float = Field(default=0, ge=0, le=72)
     space_before_pt: float = Field(default=18, ge=0, le=72)
     space_after_pt: float = Field(default=12, ge=0, le=72)
 
@@ -40,7 +33,6 @@ class DocumentStyle(AppearanceModel):
     font_family: FontFamily = "宋体"
     font_size_pt: float = Field(default=12, ge=8, le=36)
     line_spacing: float = Field(default=1.5, ge=1, le=3)
-    line_spacing_pt: float = Field(default=0, ge=0, le=72)
     paragraph_before_pt: float = Field(default=0, ge=0, le=72)
     paragraph_after_pt: float = Field(default=6, ge=0, le=72)
     first_line_indent_pt: float = Field(default=24, ge=0, le=72)
@@ -60,11 +52,11 @@ class LayoutUpdate(AppearanceModel):
     def complete_style(cls, value):
         if isinstance(value, dict) and isinstance(value.get("style"), dict):
             style = value["style"]
-            missing = set(DocumentStyle.model_fields) - set(style) - {"line_spacing_pt"}
+            missing = set(DocumentStyle.model_fields) - set(style)
             if missing:
                 raise ValueError("排版设置必须完整提交，缺少：" + ", ".join(sorted(missing)))
             for heading in style.get("headings", []):
-                if isinstance(heading, dict) and set(HeadingAppearance.model_fields) - set(heading) - {"line_spacing_pt"}:
+                if isinstance(heading, dict) and set(HeadingAppearance.model_fields) - set(heading):
                     raise ValueError("每一级标题必须完整提交所有排版字段。")
         return value
 
@@ -119,6 +111,8 @@ def extract_docx_document_style(reader, document_root) -> tuple[DocumentStyle | 
     rels = str(path.parent / "_rels" / (path.name + ".rels"))
     styles_name = next((_resolve_part(main, rel.get("Target", "")) for rel in reader.relationships(rels)
                         if rel.get("Type", "").endswith("/styles") and rel.get("TargetMode", "").lower() != "external"), None)
+    aliases = {"SimSun": "宋体", "NSimSun": "宋体", "SimHei": "黑体", "FangSong": "仿宋", "KaiTi": "楷体",
+               "Microsoft YaHei": "微软雅黑", **{name: name for name in ("宋体", "黑体", "仿宋", "楷体", "微软雅黑", "Times New Roman", "Arial")}}
 
     def number(value, divisor=1):
         try:
@@ -133,11 +127,10 @@ def extract_docx_document_style(reader, document_root) -> tuple[DocumentStyle | 
         fonts = _child(run, "rFonts") if run is not None else None
         if fonts is not None:
             raw = _attr(fonts, "eastAsia") or _attr(fonts, "ascii") or _attr(fonts, "hAnsi")
-            if raw:
-                try:
-                    result["font_family"] = validate_font_name(raw)
-                except ValueError:
-                    warnings.append(f"字体名称 {raw[:80]} 无效，未作为排版规则使用，请确认。")
+            if raw in aliases:
+                result["font_family"] = aliases[raw]
+            elif raw:
+                warnings.append(f"字体 {raw[:80]} 不在支持列表，暂用默认字体，请确认。")
         size = _child(run, "sz") if run is not None else None
         if size is not None:
             value = number(_attr(size, "val"), 2)

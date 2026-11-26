@@ -10,7 +10,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.document_layout import DocumentStyle, HeadingAppearance
-from app.document_fonts import match_font_name
 
 router = APIRouter(tags=["document assistant"])
 
@@ -51,7 +50,7 @@ class ChatPlan(BaseModel):
 
 LABELS = {
     "font_family": "正文字体", "font_size_pt": "正文字号（磅）",
-    "line_spacing": "正文行距（倍）", "line_spacing_pt": "正文固定行距（磅）", "paragraph_before_pt": "正文段前（磅）",
+    "line_spacing": "正文行距（倍）", "paragraph_before_pt": "正文段前（磅）",
     "paragraph_after_pt": "正文段后（磅）", "first_line_indent_pt": "首行缩进（磅）",
     "margin_top_mm": "上页边距（毫米）", "margin_bottom_mm": "下页边距（毫米）",
     "margin_left_mm": "左页边距（毫米）", "margin_right_mm": "右页边距（毫米）",
@@ -60,6 +59,7 @@ LABELS = {
 FONT_SIZES = {"小初": 36, "小一": 24, "小二": 18, "小三": 15, "小四": 12,
               "小五": 9, "初": 42, "一": 26, "二": 22, "三": 16,
               "四": 14, "五": 10.5, "六": 7.5}
+FONTS = ("Times New Roman", "微软雅黑", "Arial", "仿宋", "黑体", "楷体", "宋体")
 NUMBER = r"(\d+(?:\.\d+)?)"
 
 
@@ -109,13 +109,9 @@ def local_plan(payload: ChatRequest) -> ChatPlan:
         heading_prop = {"paragraph_before_pt": "space_before_pt", "paragraph_after_pt": "space_after_pt"}.get(prop, prop)
         if scope is None or scope == []:
             result[prop] = value
-            if prop == "line_spacing":
-                result["line_spacing_pt"] = 0.0
         if scope is not None and prop in {"font_family", "font_size_pt", "line_spacing", "paragraph_before_pt", "paragraph_after_pt"}:
             for index in scope or list(range(6)):
                 result["headings"][index][heading_prop] = value
-                if prop == "line_spacing":
-                    result["headings"][index]["line_spacing_pt"] = 0.0
 
     for clause in re.split(r"[，,；;。\n]+", text):
         if not clause.strip():
@@ -130,7 +126,7 @@ def local_plan(payload: ChatRequest) -> ChatPlan:
             scope = None
         elif "标题" in clause:
             scope = list(range(6))
-        font = match_font_name(clause)
+        font = next((font for font in FONTS if font.casefold() in clause.casefold()), None)
         if font:
             assign("font_family", font)
         size = re.search(r"(小初|小[一二三四五])号?|([初一二三四五六])号", clause)
@@ -201,7 +197,7 @@ async def configured_plan(payload: ChatRequest, config: dict) -> ChatPlan:
         "中文字号：三号16磅、小三15、四号14、小四12、五号10.5、小五9。"
         "需求不清楚时简短追问并返回proposed_style=null。解释或问答也返回null。"
         "不要把未提供的学校要求编造成事实；有profile_style时才可按学校模板生成排版。"
-        "字体名称必须完整保留：仿宋_GB2312、仿宋和华文仿宋是不同要求，不得截短或擅自替换。字体缺失时保留请求名称并说明导出前需检查；不可表达的固定行距等请说明。"
+        "未知的字体或不可表达的固定行距等请说明，不能擅自换成其他字体/行距。"
         "正文片段可能不完整，不能据此评价完整论文。只返回指定结构。"
     )
     async with AsyncOpenAI(api_key=config["api_key"], base_url=config["base_url"],

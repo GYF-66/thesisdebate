@@ -7,24 +7,10 @@ from pathlib import PurePosixPath
 import re
 import zipfile
 
-from typing import Literal
-
-from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.heading_numbering import DEFAULT_HEADING_STYLES, HeadingStyle, parse_prefix, unwrap_heading
-from app.document_layout import DocumentStyle
-from app.document_profiles import DOCUMENT_KINDS, REVIEW_PROFILES
-
-
-class TemplateRuleSource(BaseModel):
-    """A bounded data record. Source text is never executable or a model instruction."""
-    id: str = Field(min_length=1, max_length=100)
-    source: str = Field(min_length=1, max_length=300)
-    quote: str = Field(default="", max_length=1000)
-    field: str = Field(min_length=1, max_length=100)
-    value: JsonValue
-    status: Literal["explicit", "inferred", "confirmed", "conflict"] = "explicit"
-    note: str = Field(default="", max_length=500)
+from app.document_layout import DocumentStyle, extract_docx_document_style
 
 
 class SchoolTemplateDraft(BaseModel):
@@ -34,46 +20,6 @@ class SchoolTemplateDraft(BaseModel):
     document_style: DocumentStyle | None = None
     source_name: str | None = Field(default=None, max_length=255)
     warnings: list[str] = Field(default_factory=list, max_length=30)
-    document_kind: str = "thesis"
-    review_profile_id: str = "academic"
-    required_sections: list[str] = Field(default_factory=list, max_length=30)
-    cover_fields: list[str] = Field(default_factory=list, max_length=30)
-    submission_checklist: list[str] = Field(default_factory=list, max_length=40)
-    rule_sources: list[TemplateRuleSource] = Field(default_factory=list, max_length=200)
-    parent_template_id: str | None = Field(default=None, max_length=100)
-
-    @model_validator(mode="before")
-    @classmethod
-    def compatible_profile(cls, value):
-        if isinstance(value, dict) and "review_profile_id" not in value:
-            value = {**value, "review_profile_id": "academic" if value.get("document_kind", "thesis") == "thesis" else "general"}
-        return value
-
-    @field_validator("document_kind")
-    @classmethod
-    def known_kind(cls, value: str) -> str:
-        if value not in DOCUMENT_KINDS:
-            raise ValueError("不支持的文档类型。")
-        return value
-
-    @field_validator("review_profile_id")
-    @classmethod
-    def known_review_profile(cls, value: str) -> str:
-        if value not in REVIEW_PROFILES:
-            raise ValueError("不支持的审查模式。")
-        return value
-
-    @field_validator("required_sections", "cover_fields", "submission_checklist")
-    @classmethod
-    def clean_items(cls, value: list[str]) -> list[str]:
-        result = []
-        for item in value:
-            item = item.strip()
-            if not item or len(item) > 200 or any(ord(char) < 32 for char in item):
-                raise ValueError("模板条目应为 1 至 200 字的单行文字。")
-            if item not in result:
-                result.append(item)
-        return result
 
     @field_validator("name", "institution")
     @classmethod
@@ -137,13 +83,15 @@ def import_template(filename: str, data: bytes) -> SchoolTemplateDraft:
             return SchoolTemplateDraft.model_validate(payload)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("模板 JSON 必须为有效 UTF-8 JSON。") from error
+    if suffix == ".pdf":
+        return import_pdf_template(name, data)
     if suffix != ".docx":
-        raise ValueError("学校模板支持 DOCX 样例或 JSON 编号规则。")
+        raise ValueError("学校模板支持 PDF、DOCX 样例或 JSON 编号规则。")
     from app.document_import import _DocxReader, _attr, _child, _heading_number, _local, _number_properties
     try:
         with zipfile.ZipFile(BytesIO(data)) as archive:
             reader = _DocxReader(archive)
-            content, _ = reader.extract()
+            content, _ = reader.extract(allow_empty=True)
             candidates: list[set[str]] = [set() for _ in range(6)]
             for match in re.finditer(r"(?m)^(#{1,6})\s+(.+)$", content):
                 core, _ = unwrap_heading(match.group(2))
@@ -179,8 +127,7 @@ def import_template(filename: str, data: bytes) -> SchoolTemplateDraft:
                 inferred = _word_number_style(definition)
                 if inferred:
                     candidates[level - 1].add(inferred)
-            from app.template_analysis import analyze_docx_style, fill_recognized, identity_sources
-            document_style, layout_warnings, style_sources = analyze_docx_style(reader, root, name)
+            document_style, layout_warnings = extract_docx_document_style(reader, root)
             warnings = ["提取标题编号与可识别排版规则；分节分页、引用版式与未识别字段请确认后保存。"]
             result = list(DEFAULT_HEADING_STYLES)
             for index, choices in enumerate(candidates):
@@ -190,33 +137,29 @@ def import_template(filename: str, data: bytes) -> SchoolTemplateDraft:
                     warnings.append(f"第 {index + 1} 级出现多种编号，暂保留原编号，请手动选择学校规则。")
                 else:
                     warnings.append(f"未明确识别第 {index + 1} 级编号，暂保留原编号，可手动调整。")
-            from app.template_rules import sample_rule_sources, extract_rules
-            draft = SchoolTemplateDraft(name=PurePosixPath(name).stem[:120], heading_numbering=result,
+            return SchoolTemplateDraft(name=PurePosixPath(name).stem[:120], heading_numbering=result,
                                        document_style=document_style, source_name=name,
-                                       rule_sources=sample_rule_sources(name, candidates, None) + style_sources,
                                        warnings=(warnings + layout_warnings)[:30])
-            # Read literal paragraph text including cover tables; headers may carry school identity.
-            paragraphs = ["".join(node.text or "" for node in p.iter() if _local(node.tag) == "t")
-                          for p in root.iter() if _local(p.tag) == "p"]
-            text = "\n".join(paragraphs)[:100000]
-            table_rows = [" ".join("".join(node.text or "" for node in cell.iter() if _local(node.tag) == "t")
-                                    for cell in row if _local(cell.tag) == "tc")
-                          for row in root.iter() if _local(row.tag) == "tr"]
-            text = (text + "\n" + "\n".join(table_rows))[:100000]
-            textual = extract_rules(text, name)
-            from app.document_import import _resolve_part
-            main = reader.main_part()
-            part = PurePosixPath(main)
-            for relation in reader.relationships(str(part.parent / "_rels" / (part.name + ".rels"))):
-                if relation.get("Type", "").endswith("/header") and relation.get("TargetMode", "").lower() != "external":
-                    header = reader.read_xml(_resolve_part(main, relation.get("Target", "")))
-                    lines = ["".join(node.text or "" for node in p.iter() if _local(node.tag) == "t")
-                             for p in header.iter() if _local(p.tag) == "p"]
-                    if not any(item.field == "institution" for item in textual.rule_sources):
-                        textual.rule_sources.extend(identity_sources("\n".join(lines), name + " · 页眉"))
-            # A sample's narrative is not a normative source: recognize only lines with
-            # formatting vocabulary, cover identity, and explicit checklist syntax.
-            draft.warnings = (draft.warnings + [w for w in textual.warnings if "未识别到" not in w])[:30]
-            return fill_recognized(draft, textual.rule_sources)
     except (zipfile.BadZipFile, OSError, RuntimeError, EOFError, OverflowError) as error:
         raise ValueError("DOCX 模板损坏或结构异常，请另存为有效 DOCX。") from error
+
+
+def import_pdf_template(name: str, data: bytes) -> SchoolTemplateDraft:
+    from app.pdf_import import extract_pdf, inspect_pdf_style
+    extracted = extract_pdf(data)
+    style, warnings = inspect_pdf_style(extracted)
+    candidates = [set() for _ in range(6)]
+    for match in re.finditer(r"(?m)^(#{1,6})\s+(.+)$", extracted["content"]):
+        core, _ = unwrap_heading(match[2])
+        parsed = parse_prefix(core)
+        if parsed and parsed.style != "appendix":
+            candidates[len(match[1]) - 1].add(parsed.style)
+    numbering = ["preserve"] * 6
+    for index, choices in enumerate(candidates):
+        if len(choices) == 1:
+            numbering[index] = next(iter(choices))
+        else:
+            warnings.append(f"第 {index + 1} 级编号未唯一识别，保留原编号，可手动设置。")
+    return SchoolTemplateDraft(name=PurePosixPath(name).stem[:120], source_name=name,
+        document_style=style, heading_numbering=numbering,
+        warnings=(extracted["warnings"] + warnings)[:30])

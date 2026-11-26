@@ -52,8 +52,6 @@ def validate_change(source: str, change: Any, offsets: Optional[Dict[int, int]] 
 
 
 def edits_conflict(left: Edit, right: Edit) -> bool:
-    if (left.start, left.end, left.replacement) == (right.start, right.end, right.replacement):
-        return False
     if left.start == left.end and right.start == right.end:
         return left.start == right.start
     if left.start == left.end:

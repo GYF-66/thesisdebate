@@ -112,15 +112,22 @@ class ReviewStore:
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     active_document_id TEXT REFERENCES workspace_documents(id)
                 );
+                CREATE TABLE IF NOT EXISTS export_history (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT,
+                    filename TEXT NOT NULL,
+                    format TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    data BLOB NOT NULL,
+                    created_at TEXT NOT NULL
+                );
             """)
         with self._transaction() as connection:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(workspace_documents)")}
             if "profile_id" not in columns:
                 connection.execute("ALTER TABLE workspace_documents ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'generic-thesis'")
-            if "document_kind" not in columns:
-                connection.execute("ALTER TABLE workspace_documents ADD COLUMN document_kind TEXT NOT NULL DEFAULT 'thesis'")
-            if "review_profile_id" not in columns:
-                connection.execute("ALTER TABLE workspace_documents ADD COLUMN review_profile_id TEXT NOT NULL DEFAULT 'academic'")
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
@@ -156,7 +163,6 @@ class ReviewStore:
         document_id: str, content: str, origin: str,
         expected_head_hash: str | None = None, create_version: bool = True,
         expected_head_absent: bool = False,
-        history_record: tuple[str, str, dict] | None = None,
     ) -> dict:
         """Commit a proposed format snapshot and its version/head atomically.
 
@@ -170,10 +176,6 @@ class ReviewStore:
         proposed_runs = {**runs, run_id: committed_run}
         version = None
         with self._transaction() as connection:
-            if expected_head_hash is not None:
-                head = connection.execute("SELECT hash FROM heads WHERE document_id=?", (document_id,)).fetchone()
-                if head is None or head["hash"] != expected_head_hash:
-                    raise ValueError("version head conflict")
             if expected_head_absent and connection.execute(
                 "SELECT 1 FROM heads WHERE document_id=?", (document_id,),
             ).fetchone() is not None:
@@ -186,13 +188,6 @@ class ReviewStore:
                 if not committed_run.get("base_version_id"):
                     committed_run["base_version_id"] = version["id"]
             self._save_format_state(connection, proposed_runs, changes, sources)
-            if history_record is not None:
-                namespace, record_id, record = history_record
-                connection.execute(
-                    "INSERT INTO records(namespace,record_id,payload,updated_at) VALUES (?,?,?,?) "
-                    "ON CONFLICT(namespace,record_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
-                    (namespace, record_id, _encode(record), _now()),
-                )
             result = {"run": json.loads(_encode(committed_run)), "version": version}
         return result
 
@@ -216,11 +211,35 @@ class ReviewStore:
         with self._lock:
             return self._workspace_document(self._connection, document_id)
 
+    def get_preference(self, key: str) -> dict | None:
+        with self._lock:
+            row = self._connection.execute("SELECT payload FROM records WHERE namespace='ui_preferences' AND record_id=?", (key,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def save_preference(self, key: str, value: dict) -> None:
+        with self._transaction() as connection:
+            connection.execute("INSERT INTO records(namespace,record_id,payload,updated_at) VALUES ('ui_preferences',?,?,?) ON CONFLICT(namespace,record_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at", (key, _encode(value), _now()))
+
+    def save_export(self, document_id: str | None, filename: str, format: str, scope: str, content: str, media_type: str, data: bytes) -> str:
+        identity = 'export-' + uuid4().hex
+        with self._transaction() as connection:
+            connection.execute('INSERT INTO export_history VALUES (?,?,?,?,?,?,?,?,?)', (identity, document_id, filename, format, scope, hashlib.sha256(content.encode()).hexdigest(), media_type, data, _now()))
+        return identity
+
+    def list_exports(self) -> list[dict]:
+        with self._lock:
+            return [dict(row) for row in self._connection.execute('SELECT id,document_id,filename,format,scope,content_hash,length(data) AS size,created_at FROM export_history ORDER BY created_at DESC,id DESC')]
+
+    def get_export(self, identity: str) -> dict | None:
+        with self._lock:
+            row = self._connection.execute('SELECT * FROM export_history WHERE id=?', (identity,)).fetchone()
+            return dict(row) if row else None
+
     def workspace(self) -> dict:
         with self._transaction() as connection:
             rows = connection.execute(
                 """SELECT d.id,d.name,d.document_type,d.updated_at,d.revision,d.last_run_id,
-                          d.profile_id,d.document_kind,d.review_profile_id,h.hash AS head_hash FROM workspace_documents d
+                          d.profile_id,h.hash AS head_hash FROM workspace_documents d
                    LEFT JOIN heads h ON h.document_id=d.id ORDER BY d.updated_at DESC,d.id""",
             ).fetchall()
             active = connection.execute("SELECT active_document_id FROM workspace_state WHERE id=1").fetchone()
@@ -228,22 +247,16 @@ class ReviewStore:
                     "active_document_id": active[0] if active else None}
 
     def create_workspace_document(self, name: str, content: str, editor_json: dict | None = None,
-                                  profile_id: str = "generic-thesis", document_kind: str = "thesis",
-                                  review_profile_id: str = "academic", original_docx: dict | None = None) -> dict:
+                                  profile_id: str = "generic-thesis") -> dict:
         document_id = "doc-" + uuid4().hex
         encoded = _encode(editor_json) if editor_json is not None else None
         with self._transaction() as connection:
             connection.execute(
                 """INSERT INTO workspace_documents
-                   (id,name,content,editor_json,document_type,revision,updated_at,last_run_id,profile_id,document_kind,review_profile_id)
-                   VALUES (?,?,?,?,'markdown',1,?,NULL,?,?,?)""",
-                (document_id, name, content, encoded, _now(), profile_id, document_kind, review_profile_id),
+                   (id,name,content,editor_json,document_type,revision,updated_at,last_run_id,profile_id)
+                   VALUES (?,?,?,?,'markdown',1,?,NULL,?)""",
+                (document_id, name, content, encoded, _now(), profile_id),
             )
-            if original_docx is not None:
-                connection.execute(
-                    "INSERT INTO records(namespace,record_id,payload,updated_at) VALUES ('original_docx',?,?,?)",
-                    (document_id, _encode(original_docx), _now()),
-                )
             connection.execute(
                 """INSERT INTO workspace_state(id,active_document_id) VALUES (1,?)
                    ON CONFLICT(id) DO UPDATE SET active_document_id=excluded.active_document_id""",
@@ -255,12 +268,11 @@ class ReviewStore:
         self, document_id: str, name: str, content: str, editor_json: dict | None,
         expected_revision: int, last_run_id: str | None = None, update_run: bool = False,
         profile_id: str | None = None,
-        document_kind: str | None = None, review_profile_id: str | None = None,
     ) -> dict:
         encoded = _encode(editor_json) if editor_json is not None else None
         with self._transaction() as connection:
             previous = connection.execute(
-                "SELECT revision,last_run_id,profile_id,document_kind,review_profile_id FROM workspace_documents WHERE id=?", (document_id,),
+                "SELECT revision,last_run_id,profile_id FROM workspace_documents WHERE id=?", (document_id,),
             ).fetchone()
             if previous is None:
                 raise KeyError(document_id)
@@ -276,10 +288,8 @@ class ReviewStore:
                     raise ValueError("run must belong to the same document")
             connection.execute(
                 """UPDATE workspace_documents SET name=?,content=?,editor_json=?,
-                   revision=revision+1,updated_at=?,last_run_id=?,profile_id=?,document_kind=?,review_profile_id=? WHERE id=? AND revision=?""",
-                (name, content, encoded, _now(), selected_run, selected_profile,
-                 document_kind or previous["document_kind"], review_profile_id or previous["review_profile_id"],
-                 document_id, expected_revision),
+                   revision=revision+1,updated_at=?,last_run_id=?,profile_id=? WHERE id=? AND revision=?""",
+                (name, content, encoded, _now(), selected_run, selected_profile, document_id, expected_revision),
             )
             return self._workspace_document(connection, document_id)
 

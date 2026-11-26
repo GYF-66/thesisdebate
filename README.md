@@ -1,182 +1,112 @@
 # 研辩台 ThesisDebate
 
-**把阅读、审查、修订与导出，放进同一个论文审查与修订工作台。**
+中文论文审查与修订工作台。导入文档，核对章节目录，运行格式检查，确认修改并导出。Windows 单文件内置页面、Python 和后端，本地编辑、格式检查与排版无需模型服务。
 
-研辩台是一款面向学生、研究者与文档写作者的本地桌面应用。围绕一份文档，可以完成内容编辑、格式检查、多角色审查、修改核验与成果导出；每条建议都可以查看出处、决定是否接受，并在需要时撤销。
+[下载 Windows v0.0.3](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.3) · [更新记录](CHANGELOG.md) · [反馈问题](https://github.com/GYF-66/thesisdebate/issues/new/choose) · [发布验证记录](docs/release-v0.0.3.json)
 
-[下载 Windows v0.0.2](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.2) · [提交问题或建议](https://github.com/GYF-66/thesisdebate/issues/new/choose) · [更新记录](CHANGELOG.md)
+## v0.0.3 更新
 
-> 首次启动可点击「用示例试一次」，跟随高亮引导完成检查、确认与导出。本地排版和模板分析无需配置模型。
+- 统一中文浅色八页工作台、真实文档统计、学校规范和导出记录。
+- 修复空编号列表导入崩溃，保持空项、嵌套结构及历史富文档。
+- 支持文字版 PDF 正文导入，自动识别章节、书签及明显大字号短标题，加入分级目录；点击定位，保存后恢复。
+- 修复公式覆盖选中文本、切换文档后撤销历史污染当前稿的问题。
 
-[v0.0.2 新手指南](docs/FIRST_USE.md) · [发布验证记录](docs/release-v0.0.2.json)
+以下截图来自实际页面及 Windows EXE 的验收文档。
 
-## v0.0.2 更新
+![论文工作台](docs/screenshots/overview-v0.0.3.png)
 
-- 上传 Word（DOCX）或文字版 PDF，自动填写有依据的学校、字体、字号、行距、缩进、页边距与标题参数；冲突项集中核对。
-- 固定磅值行距贯通预览、保存和导出；选用模板后自动载入排版预览。
-- 柔和暖白背景，原文淡红、建议淡绿、当前修改淡蓝；引导按钮和选项高亮更清楚。
-- 文档助手保留任务记录，支持检查、排版与文献检索；检索结果选择后加入资料。
+![文档统计](docs/screenshots/analytics-v0.0.3.png)
 
-以下两张为 v0.0.2 EXE 的实际截图，使用内置练习文档。
-
-![v0.0.2 文档工作台](docs/screenshots/workbench-v0.0.2.png)
-
-![v0.0.2 新手入口](docs/screenshots/welcome-v0.0.2.png)
-
-## 功能一览
-
-| 功能 | 可以做什么 |
-| --- | --- |
-| 文档工作台 | 新建或导入 Markdown、TXT、DOCX；富文本编辑、标题目录、表格与公式预览，自动保存并恢复上次文档。 |
-| 格式检查与修订 | 按规则检查标题编号、标题间距、行尾空白、参考文献编号等；同类建议分组，支持逐项或批量接受、拒绝及撤销。 |
-| 多角色 Agent 审查 | 配置兼容模型服务后，从多个角色检查论证与证据，查看任务进度、来源定位和历史版本，人工确认修改。 |
-| 模型渠道库 | 保存多个服务配置，搜索、筛选、测试连接和切换当前渠道；已开始的任务保留自己的配置快照。 |
-| 排版与字体 | 设置字体、字号、行距、段距、页边距和六级标题；检索本机字体，预览排版并逐项确认调整。 |
-| 资料与返修辅助 | 导入资料、按关键词查找出处和摘录；整理导师任务、批注与答复，生成提交检查单和答辩准备问题。 |
-| 学校格式模板 | 上传 DOCX 模板或文字版 PDF 规范，自动识别并填写学校、字体、字号、行距等；保留出处，冲突项单独选择。 |
-| 成果导出 | 生成 Markdown、DOCX 与分页 PDF，选择原稿、预期稿或当前稿；提供修改对照和 DOCX 结构保护。 |
-
-## 功能截图（v0.0.1 历史截图）
-
-### 文档工作台
-
-正文、目录、修改建议与排版入口集中呈现，适合边阅读边修订。
-
-![文档工作台](docs/screenshots/workbench.jpg)
-
-### 格式建议与修改对照
-
-同类修改集中查看，逐项确认建议与原文之间的关系。
-
-![格式建议与修改对照](docs/screenshots/revisions.jpg)
-
-### 排版与字体
-
-检索本机字体，并在导出前检查可用字体和替代情况。
-
-![排版与字体](docs/screenshots/typography.jpg)
-
-### 模型渠道设置
-
-模型服务可自行配置；未配置时，本地编辑、格式检查与导出仍可使用。
-
-![模型渠道设置](docs/screenshots/channels.jpg)
-
-### 导出文档
-
-按用途选择文件格式、导出范围与 DOCX 结构保护方式。
-
-![导出文档](docs/screenshots/export.jpg)
+![PDF 自动章节目录](docs/screenshots/pdf-outline-v0.0.3.png)
 
 ## 下载与开始使用
 
-1. 打开 [v0.0.2 发布页](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.2)，下载附件 `ThesisDebate_0.0.2.exe`（研辩台 Windows 版）。GitHub 下载文件名使用英文；其内容与已验证文件 `研辩台.exe` 完全相同。
-2. 在 Windows x64 上运行。程序已内置 Python、后端与页面，无需安装 Node.js 或启动终端；系统需要具备 Microsoft Edge WebView2 Runtime。
-3. 点击「用示例试一次」体验引导，或新建文档、导入 `.md`、`.txt`、`.docx` 文件。也可以使用 [示例论文](examples/论文示例.md) 体验本地格式检查。
-4. 打开格式检查，查看修改建议，确认后导出修订副本。需要多角色审查时，再通过顶部的渠道管理设置模型服务。
+1. 在 [v0.0.3 发布页](https://github.com/GYF-66/thesisdebate/releases/tag/v0.0.3) 下载 ThesisDebate_0.0.3.exe。
+2. 使用 Windows x64 和 Microsoft Edge WebView2 Runtime，双击启动，无需单独安装 Python 或 Node.js。
+3. 首次显示空白工作区。新建文档，或从「导入文档」选择 Markdown、TXT、DOCX、带文字层 PDF。
+4. 在「文档编辑」核对正文及左侧目录，运行格式扫描，逐项接受、保留或撤销建议。
+5. 核对学校模板排版后导出 Markdown、DOCX 或 PDF；导出记录可再次下载。
 
-v0.0.2 文件大小为 **51,802,030 字节（约 49.40 MiB）**，SHA-256：
+文件大小 **54,324,057 字节（约 51.81 MiB）**，SHA-256：
 
-```text
-c8ed64d8055667df078ac3a14e915261435b7da5b00035b53c48c1bef03d881c
-```
+    0c347b8cefaf78cfd131db8c16bea38df702ff8e5a6ec1374b828b5d03d7e639
 
-在 PowerShell 中可核对下载文件：
+PowerShell 校验命令：
 
-```powershell
-Get-FileHash -Algorithm SHA256 './ThesisDebate_0.0.2.exe'
-```
+    Get-FileHash -Algorithm SHA256 './ThesisDebate_0.0.3.exe'
 
-## 一次完整的修订流程
+## 功能
 
-1. **导入与编辑**：打开文档，确认正文与标题目录，修改内容并保存。
-2. **本地格式检查**：先运行确定性规则，检查标题、空白与编号等可直接验证的问题。
-3. **模型审查（可选）**：配置服务后运行多角色审查，检查建议中的证据与原文定位。
-4. **确认修改**：通过差异与修改核验，逐条接受、保留原文或撤销；格式调整需要明确应用。
-5. **预览与导出**：检查分页、字体和导出范围，保存 DOCX、PDF 或 Markdown 副本。
+| 页面 | 功能 |
+| --- | --- |
+| 工作台 | 最近文稿与真实工作区概况。 |
+| 导入文档 | Markdown、TXT、DOCX、文字版 PDF 正文导入。 |
+| 文档统计 | 类型分布、扫描覆盖率、状态筛选与真实计数。 |
+| 检测报告 | 规则问题、原文定位、修订状态和建议处理。 |
+| 文档编辑 | 富文本、章节目录、表格、公式、自动保存、模板排版与审查入口。 |
+| 规则设置 | 检查规则开关和持久化配置。 |
+| 学校规范库 | 上传 DOCX、PDF 或 JSON 规范，核对识别参数并选用。 |
+| 导出记录 | Markdown、DOCX、PDF 和历史批量下载。 |
 
-## 模型配置与本地数据
+模型服务可在 Agent 设置中填写现有兼容渠道的地址、模型和密钥；未配置时本地编辑、扫描及导出仍可用，不生成模拟审查意见。运行模型审查会发送对应文稿至选定服务。
 
-顶部的 **Agent 渠道** 与 **管理 Agent 渠道** 提供服务地址、模型和密钥设置，以及连接测试和渠道切换。程序不会提供公共密钥，模型调用费用由所使用的服务决定。没有可用渠道时，不会生成虚构的模型审查结果。
+## PDF 与文档兼容
 
-桌面版的数据保存在 `%LOCALAPPDATA%/ThesisDebate/`，包括 SQLite 文档数据和本地渠道配置；Windows 渠道密钥使用系统 DPAPI 保护。更新或移动 EXE 不会清空这个目录。备份时请先关闭程序，再复制整个数据目录。
+PDF 识别结合中文章／节、多级编号、英文 Chapter／Section、真实书签和文字字号。识别结果成为可编辑标题，随文档保存；可通过编辑器工具栏调整标题级别。重复页眉和原 PDF 的点线目录行保留正文，不额外加入导航。
 
-本地编辑和规则检查无需模型服务。运行模型审查会将相应文档内容发送到选定服务；主动触发文献核验时，会查询 Crossref，必要时按 DOI 查询 OpenAlex。
+- 扫描／图片 PDF 请先 OCR，当前不内置 OCR；加密、损坏和超限文件会显示具体提示。
+- 自动目录为左侧导航，当前不自动插入带页码的打印目录。
+- 复杂分栏、表格、图片、公式及非常规标题需核对；导入不承诺像素级保留 PDF 原版式。
+- DOCX 导入与导出以可编辑内容为主；原始图片、域、批注等复杂对象需对照原稿核验。
+- 重新生成 DOCX／PDF 的公式保留 LaTeX 源码；本地规则、模型意见和文献元数据均需人工判断。
 
-## 当前版本的边界
+## 本地数据与更新
 
-- **正文导入支持 Markdown、TXT、DOCX**；论文 PDF 正文导入、扫描件 OCR 尚未实现。资料库和规范工具可提取带文字层 PDF 的文本。
-- DOCX 导入会提取可编辑内容并提示兼容性。结构保护导出只回写可安全映射的普通文字；复杂结构修改可能被阻止。重新生成可编辑副本时，图片、域、批注等对象可能无法还原，界面会提示。
-- 公式可在编辑器中预览；重新生成 DOCX/PDF 时保留 LaTeX 源码，不承诺公式字形排版。原 DOCX 的受保护公式部件可保留。
-- 资料问答目前是本地关键词检索与摘录，文献核验检查元数据是否匹配，均不等同于证明某个学术结论。
-- 当前以本地单用户工作区为主；多人实时协作、查重检测与真实 TeX 编译不属于首版能力。
+数据位于 %LOCALAPPDATA%/ThesisDebate/，包括 SQLite 文档和本地配置。更新 EXE 不清空工作区；更新前保存并关闭旧窗口。备份请在退出后复制整个数据目录。
 
 ## 从源码运行
 
-源码与本次发布的 EXE 来自同一构建源。发布版本以 **v0.0.2** 为准，部分内部开发包的版本字段暂沿用 `0.1.0`。开发环境需要 Python 3.12、Node.js 20.9 或更高版本，以及 npm。
+发布以 **v0.0.3** 标签为准，内部包版本沿用开发标记。环境：Windows x64、Python 3.12、Node.js 24 与 npm。源码包对应当前提交；发布 EXE 来自已验证候选，仓库仅适配 frontend/ 资源路径和测试依赖清单。
 
-在项目根目录安装依赖：
+在项目根目录执行：
 
-```powershell
-py -3.12 -m venv backend/.venv
-./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
-cd frontend
-npm ci
-cd ..
-```
+    py -3.12 -m venv backend/.venv
+    ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+    cd frontend
+    npm ci
+    cd ..
 
-分别在两个终端从项目根目录启动：
+分别在两个终端运行：
 
-```powershell
-./START_REVIEW.ps1 -Mode backend
-```
+    ./START_REVIEW.ps1 -Mode backend
+    ./START_REVIEW.ps1 -Mode frontend
 
-```powershell
-./START_REVIEW.ps1 -Mode frontend
-```
-
-打开 `http://localhost:3001`；API 为 `http://localhost:8001`。启动器会配置前端 API 地址。可选的 Docker Compose 服务属于后续基础设施预留，本地工作区使用 SQLite，无需先启动它们。
+前端 http://localhost:3001，API http://localhost:8001。本地使用 SQLite，Docker Compose 为可选基础设施。
 
 ### 验证与打包
 
-```powershell
-./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-test.txt
-cd backend
-./.venv/Scripts/python.exe -m unittest discover -s tests -v
-cd ../frontend
-npm run lint
-node --test
-cd ..
-```
+    ./backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-test.txt
+    cd backend
+    ./.venv/Scripts/python.exe -m unittest discover -s tests -v
+    cd ../frontend
+    npm run lint
+    node --test
+    npm run build
+    cd ..
+    ./backend/.venv/Scripts/python.exe -m pip install -r desktop/requirements-build.txt
+    ./backend/.venv/Scripts/python.exe desktop/build_windows.py
 
-在 Windows x64 上构建桌面版：
-
-```powershell
-./backend/.venv/Scripts/python.exe -m pip install -r desktop/requirements-build.txt
-./backend/.venv/Scripts/python.exe -m pip install fonttools==4.68.0
-./backend/.venv/Scripts/python.exe desktop/build_windows.py
-```
-
-脚本检查依赖版本、构建前端静态资源，再生成 `desktop/dist/研辩台.exe`。详细说明见 [桌面构建文档](desktop/README.md)。
+输出 desktop/dist/研辩台.exe，详见 [桌面构建](desktop/README.md)。
 
 ## 项目结构
 
-```text
-frontend/          Next.js、TypeScript 与文档编辑界面
-backend/           FastAPI、SQLite、规则检查、审查与导出
-desktop/           pywebview 桌面入口及 Windows 打包脚本
-docs/screenshots/  各版本实际界面截图
-examples/          可导入的示例文档
-.github/           中文问题反馈与功能建议模板
-START_REVIEW.ps1   本地开发启动器
-```
+    frontend/          Next.js、TypeScript、文档界面与前端回归
+    backend/           FastAPI、SQLite、导入导出、规则与审查
+    desktop/           原生窗口与 Windows 打包
+    docs/              版本验证与截图
+    examples/          示例文档
+    START_REVIEW.ps1   本地开发启动器
 
-## 问题反馈与参与
+[历史 v0.0.2 指南](docs/FIRST_USE.md) · [贡献说明](CONTRIBUTING.md) · [GitHub Issues](https://github.com/GYF-66/thesisdebate/issues)
 
-欢迎通过 [GitHub Issues](https://github.com/GYF-66/thesisdebate/issues/new/choose) 提交 Bug、功能建议和使用体验。请附上软件版本、操作系统、复现步骤与截图；文档兼容性问题可以提供不含私人信息的最小示例。
-
-参与开发请阅读 [贡献说明](CONTRIBUTING.md)。后续会持续完善文档兼容、排版体验和审查流程。
-
-## 友情链接
-
-[LINUX DO](https://linux.do/)
+视觉整理参考 Unslop craft guidance，Damir Sokolovsky (@heydamir)，CC BY 4.0。

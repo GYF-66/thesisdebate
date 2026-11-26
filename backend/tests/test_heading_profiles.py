@@ -110,7 +110,7 @@ class HeadingProfileTests(unittest.TestCase):
         payload = {"name": "学校甲", "institution": "甲校", "heading_numbering": ["chinese", "chinese-paren", "arabic-paren", "decimal", "preserve", "none"]}
         draft = import_template("甲校.json", json.dumps(payload, ensure_ascii=False).encode())
         self.assertEqual(draft.source_name, "甲校.json")
-        self.assertEqual({profile.id for profile in main.list_profiles()}, set(main.PROFILES))
+        self.assertEqual(len(main.list_profiles()), 2)
         for styles in (["chinese"], ["run-code"] * 6):
             with self.assertRaises(ValidationError):
                 import_template("bad.json", json.dumps({**payload, "heading_numbering": styles}).encode())
@@ -158,7 +158,7 @@ class HeadingProfileTests(unittest.TestCase):
             payload = {"name": "乙校", "heading_numbering": ["chapter"] * 6}
             response = await raw_upload("/format-profiles/import?filename=school.json", json.dumps(payload).encode())
             self.assertEqual(response.status_code, 200, response.text)
-            self.assertEqual({profile["id"] for profile in (await client.get("/format-profiles")).json()}, set(main.PROFILES))
+            self.assertEqual(len((await client.get("/format-profiles")).json()), 2)
             saved = await client.post("/format-profiles", json=response.json())
             self.assertEqual(saved.status_code, 201, saved.text)
             run = await client.post("/format-runs", json={"profile_id": saved.json()["id"], "content": "# 2 二、核心接口清单\n", "requested_rules": ["heading.numbering"]})

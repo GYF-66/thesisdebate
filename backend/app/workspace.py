@@ -57,19 +57,16 @@ def get_workspace():
 
 @router.post("/documents", status_code=201)
 def create_document(payload: DraftCreate):
-    profile = main().resolve_format_profile(payload.profile_id)
-    if profile is None:
-        raise HTTPException(422, "文档模板不存在，请重新选择。")
-    return get_store().create_workspace_document(payload.name, payload.content, payload.editor_json, payload.profile_id,
-                                                 profile.document_kind, profile.review_profile_id)
+    if main().resolve_format_profile(payload.profile_id) is None:
+        raise HTTPException(422, "学校模板不存在，请重新选择。")
+    return get_store().create_workspace_document(payload.name, payload.content, payload.editor_json, payload.profile_id)
 
 
 @router.post("/import", status_code=201)
 async def import_document(request: Request, filename: str = Query(min_length=1, max_length=255),
                           profile_id: str = Query(default="generic-thesis", min_length=1, max_length=100)):
-    profile = main().resolve_format_profile(profile_id)
-    if profile is None:
-        raise HTTPException(422, "文档模板不存在，请重新选择。")
+    if main().resolve_format_profile(profile_id) is None:
+        raise HTTPException(422, "学校模板不存在，请重新选择。")
     declared = request.headers.get("content-length")
     if declared is not None:
         try:
@@ -91,18 +88,9 @@ async def import_document(request: Request, filename: str = Query(min_length=1, 
         payload = DraftCreate(name=parsed["name"], content=parsed["content"], profile_id=profile_id)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    original_docx = None
-    if parsed["source_type"] == "docx":
-        from app.docx_preservation import prepare_original
-        original_docx = await run_in_threadpool(prepare_original, filename, bytes(data), parsed["content"])
     document = await run_in_threadpool(get_store().create_workspace_document,
-                                       payload.name, payload.content, payload.editor_json, payload.profile_id,
-                                       profile.document_kind, profile.review_profile_id, original_docx)
-    source_info = None
-    if parsed["source_type"] == "docx":
-        from app.docx_preservation import compatibility
-        source_info = compatibility(get_store(), document["id"])
-    return {**document, "source_type": parsed["source_type"], "warnings": parsed["warnings"], "source_info": source_info}
+                                       payload.name, payload.content, payload.editor_json, payload.profile_id)
+    return {**document, "source_type": parsed["source_type"], "warnings": parsed["warnings"]}
 
 
 @router.get("/documents/{document_id}")
@@ -117,9 +105,8 @@ def get_document(document_id: str):
 def save_document(document_id: str, payload: DraftSave):
     module = main()
     with module.REVISION_LOCK:
-        profile = module.resolve_format_profile(payload.profile_id) if "profile_id" in payload.model_fields_set else None
-        if "profile_id" in payload.model_fields_set and profile is None:
-            raise HTTPException(422, "文档模板不存在，请重新选择。")
+        if "profile_id" in payload.model_fields_set and module.resolve_format_profile(payload.profile_id) is None:
+            raise HTTPException(422, "学校模板不存在，请重新选择。")
         if payload.last_run_id is not None:
             run = module.RUNS.get(payload.last_run_id)
             if run is None or run.document_id != document_id:
@@ -129,8 +116,6 @@ def save_document(document_id: str, payload: DraftSave):
                 document_id, payload.name, payload.content, payload.editor_json, payload.expected_revision,
                 payload.last_run_id, update_run="last_run_id" in payload.model_fields_set,
                 profile_id=payload.profile_id if "profile_id" in payload.model_fields_set else None,
-                document_kind=profile.document_kind if profile else None,
-                review_profile_id=profile.review_profile_id if profile else None,
             )
         except KeyError as error:
             raise HTTPException(404, "文档不存在。") from error

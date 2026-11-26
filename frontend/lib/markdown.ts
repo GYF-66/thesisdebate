@@ -162,6 +162,11 @@ export function sanitizeEditorDocument(document: JSONContent): JSONContent {
         flushInline()
       } else clean.content = children
     }
+    // List items require a leading paragraph, including empty imported items
+    // and persisted items whose only content is a nested list.
+    if (['listItem', 'taskItem'].includes(node.type || '') && clean.content?.[0]?.type !== 'paragraph') {
+      clean.content = [{ type: 'paragraph' }, ...(clean.content || [])]
+    }
     return clean
   }
   const safe = visit(document)

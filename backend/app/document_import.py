@@ -727,7 +727,7 @@ class _DocxReader:
                           + text.replace("\n", "\n    "))
         return result
 
-    def extract(self):
+    def extract(self, allow_empty=False):
         self.check_archive()
         main = self.main_part()
         document = self.read_xml(main)
@@ -760,7 +760,7 @@ class _DocxReader:
         self.load_styles(parts.get("styles"))
         self.load_numbering(parts.get("numbering"))
         content = "\n\n".join(self.blocks(body)).strip()
-        if not content:
+        if not content and not allow_empty:
             raise DocumentImportError("DOCX 没有可提取的正文文字；仅含图片的文档暂不支持 OCR。")
         annotations = self.notes("footnote", parts.get("footnotes")) + self.notes("endnote", parts.get("endnotes"))
         if annotations:
@@ -777,13 +777,20 @@ def parse_document(filename: str, data: bytes) -> dict:
             or any(ord(char) < 32 for char in name)):
         raise DocumentImportError("文件名无效或过长。")
     suffix = posixpath.splitext(name)[1].lower()
-    if suffix not in {".docx", ".txt", ".md", ".markdown"}:
-        raise DocumentImportError("只支持 DOCX、UTF-8 TXT 和 Markdown；当前不支持 PDF。")
+    if suffix not in {".docx", ".pdf", ".txt", ".md", ".markdown"}:
+        raise DocumentImportError("只支持 PDF、DOCX、UTF-8 TXT 和 Markdown。")
     if not isinstance(data, bytes) or not data:
         raise DocumentImportError("文件为空，无法导入。")
     if len(data) > MAX_UPLOAD_BYTES:
         raise DocumentImportError("上传文件不能超过 10 MiB。")
-    if suffix == ".docx":
+    if suffix == ".pdf":
+        from app.pdf_import import extract_pdf
+        try:
+            extracted = extract_pdf(data)
+        except ValueError as error:
+            raise DocumentImportError(str(error)) from error
+        content, warnings, source_type = extracted["content"], extracted["warnings"], "pdf"
+    elif suffix == ".docx":
         if not data.startswith(b"PK\x03\x04"):
             raise DocumentImportError("该文件不是标准 DOCX，或已加密；请另存为未加密的 DOCX。")
         try:

@@ -108,7 +108,7 @@ class LocalRuntime:
         import uvicorn
 
         resources = (Path(sys._MEIPASS) / "web" if getattr(sys, "frozen", False)
-                     else Path(__file__).resolve().parents[1] / "frontend/out")
+                     else Path(__file__).resolve().parents[1] / "frontend" / "out")
         if not (resources / "index.html").is_file():
             raise FileNotFoundError("Missing frontend/out/index.html. Build the frontend first.")
         icon = (Path(sys._MEIPASS) / "app.ico" if getattr(sys, "frozen", False)
@@ -132,12 +132,6 @@ class LocalRuntime:
                 async with previous_lifespan(app):
                     yield
             finally:
-                from app.workspace_assistant import RUNNING as assistant_tasks
-                pending_assistant = list(assistant_tasks.values())
-                for task in pending_assistant:
-                    task.cancel()
-                if pending_assistant:
-                    await asyncio.gather(*pending_assistant, return_exceptions=True)
                 for cancellation in list(agent_api.CANCELLATIONS.values()):
                     cancellation.set()
                 tasks = list(agent_api.TASKS.values())
@@ -335,7 +329,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.no_window and args.smoke_test:
         parser.error("--smoke-test requires the native window")
-    temporary = tempfile.TemporaryDirectory(prefix="thesisdebate-", ignore_cleanup_errors=True) if args.smoke_test and not args.data_dir else None
+    temporary = tempfile.TemporaryDirectory(prefix="thesisdebate-") if args.smoke_test and not args.data_dir else None
     data = data_directory(temporary.name if temporary else args.data_dir)
     runtime = None
     lock = None
@@ -415,9 +409,6 @@ def main() -> int:
             lock.close()
         report["exit_status"] = result
         write_json(args.state_file, report)
-        # Windows keeps the rotating log open until its handler is explicitly
-        # closed. Release it before removing the disposable native-test data.
-        logging.shutdown()
         if temporary:
             temporary.cleanup()
     return result

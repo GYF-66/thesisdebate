@@ -24,7 +24,6 @@ BUILD_VERSIONS = {
     "openai-agents": "0.25.0",
     "python-docx": "1.2.0",
     "reportlab": "5.1.0",
-    "fonttools": "4.68.0",
 }
 
 
@@ -61,7 +60,7 @@ def main() -> None:
         build_env["NODE_ENV"] = "production"
         run([npm, "run", "build", "--", "--webpack"], frontend, build_env)
 
-    web = ROOT / "frontend/out"
+    web = ROOT / "frontend" / "out"
     if not (web / "index.html").is_file():
         raise SystemExit("Missing static frontend export: frontend/out/index.html.")
     run([sys.executable, str(DESKTOP / "create_icon.py")], ROOT)
@@ -86,15 +85,11 @@ def main() -> None:
         "--collect-data", "openai",
         "--collect-submodules", "httpx2",
         "--collect-data", "certifi",
+        "--collect-submodules", "pypdf",
         "--collect-submodules", "docx",
         "--collect-data", "docx",
         "--collect-submodules", "reportlab",
         "--collect-data", "reportlab",
-        "--collect-submodules", "pypdf",
-        "--collect-data", "pypdf",
-        "--collect-submodules", "fontTools",
-        "--collect-data", "fontTools",
-        "--copy-metadata", "fonttools",
         "--hidden-import", "webview.platforms.winforms",
         "--hidden-import", "webview.platforms.edgechromium",
         "--hidden-import", "uvicorn.logging",
@@ -126,7 +121,7 @@ def main() -> None:
         "architecture": platform.machine(),
         "build_versions": actual,
         "runtime_versions": {name: importlib.metadata.version(name) for name in
-                             ("fastapi", "uvicorn", "openai", "httpx2", "pydantic", "python-docx", "reportlab", "pypdf", "fonttools")},
+                             ("fastapi", "uvicorn", "openai", "httpx2", "pydantic", "python-docx", "reportlab")},
         "static_files": sum(path.is_file() for path in web.rglob("*")),
         "command": command,
     }

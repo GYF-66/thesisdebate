@@ -47,9 +47,7 @@ class AgentSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.path.is_file())
         if os.name == "nt":
             self.assertNotIn(self.payload()["api_key"], self.path.read_text(encoding="utf-8"))
-            stored = json.loads(self.path.read_text(encoding="utf-8"))
-            self.assertEqual(stored["version"], 2)
-            self.assertEqual(stored["channels"][0]["credential"]["encoding"], "windows-dpapi")
+            self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["credential"]["encoding"], "windows-dpapi")
         else:
             self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
         # Every read opens the persisted file; there is no in-memory-only config.

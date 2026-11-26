@@ -17,7 +17,6 @@ from fastapi.responses import Response
 from pydantic import Field, field_validator
 
 from app.document_layout import AppearanceModel, DocumentStyle
-from app.document_fonts import COMMON_FONTS, get_font_catalogue, validate_font_name
 
 
 class DocumentExportRequest(AppearanceModel):
@@ -25,17 +24,9 @@ class DocumentExportRequest(AppearanceModel):
     content: str = Field(max_length=300_000)
     style: DocumentStyle
     format: Literal["pdf", "md", "docx"]
+    track_history: bool = False
     document_id: str | None = Field(default=None, max_length=100)
-    docx_mode: Literal["preserve", "editable_copy"] = "preserve"
-    font_substitutions: dict[str, str] = Field(default_factory=dict, max_length=32)
-
-    @field_validator("font_substitutions")
-    @classmethod
-    def valid_substitutions(cls, value):
-        for requested, replacement in value.items():
-            validate_font_name(requested)
-            validate_font_name(replacement)
-        return value
+    export_scope: Literal['original', 'expected', 'current'] = 'current'
 
     @field_validator("name", "content")
     @classmethod
@@ -178,14 +169,14 @@ def export_docx(content: str, style: DocumentStyle) -> bytes:
             setattr(section, edge + "_margin", Mm(getattr(style, "margin_" + edge + "_mm")))
     normal = document.styles["Normal"]
     _docx_font(normal.font, style.font_family, style.font_size_pt)
-    normal.paragraph_format.line_spacing = Pt(style.line_spacing_pt) if style.line_spacing_pt else style.line_spacing
+    normal.paragraph_format.line_spacing = style.line_spacing
     normal.paragraph_format.space_before = Pt(style.paragraph_before_pt)
     normal.paragraph_format.space_after = Pt(style.paragraph_after_pt)
     normal.paragraph_format.first_line_indent = Pt(style.first_line_indent_pt)
     for level, appearance in enumerate(style.headings, 1):
         heading = document.styles[f"Heading {level}"]
         _docx_font(heading.font, appearance.font_family, appearance.font_size_pt)
-        heading.paragraph_format.line_spacing = Pt(appearance.line_spacing_pt) if appearance.line_spacing_pt else appearance.line_spacing
+        heading.paragraph_format.line_spacing = appearance.line_spacing
         heading.paragraph_format.space_before = Pt(appearance.space_before_pt)
         heading.paragraph_format.space_after = Pt(appearance.space_after_pt)
         heading.paragraph_format.first_line_indent = Pt(0)
@@ -218,65 +209,32 @@ def export_docx(content: str, style: DocumentStyle) -> bytes:
     return stream.getvalue()
 
 
+FONT_FILES = {"宋体": "simsun.ttc", "黑体": "simhei.ttf", "仿宋": "simfang.ttf", "楷体": "simkai.ttf",
+              "微软雅黑": "msyh.ttc", "Times New Roman": "times.ttf", "Arial": "arial.ttf"}
 FONT_LOCK = RLock()
 
 
-def _font_problem(family: str, text: str) -> tuple[str | None, str | None]:
-    catalogue = get_font_catalogue()
-    face = catalogue.face(family, text)
-    required = {ord(char) for char in text if not char.isspace() and ord(char) >= 32}
-    reason = ("本机未安装精确字体" if face is None else face.pdf_reason or
-              ("缺少字符：" + "".join(chr(code) for code in sorted(required - face.coverage)[:12]) if required - face.coverage else None))
-    suggested = None
-    if reason:
-        names = [catalogue.substitute(family), *COMMON_FONTS, *catalogue.groups]
-        for name in names:
-            candidate = catalogue.face(name, text) if name else None
-            if candidate and not candidate.pdf_reason and required <= candidate.coverage:
-                suggested = candidate.family
-                break
-    return reason, suggested
-
-
-def _font_confirmation(issues: list[dict]):
-    return HTTPException(409, {"code": "font_confirmation_required", "message": "字体要求无法精确导出PDF。请检查缺失/不支持的字体，并逐项确认替代；正文和模板要求尚未更改。", "issues": issues})
-
-
-def _pdf_font(family: str, warnings: list[str], text: str = "") -> str:
+def _pdf_font(family: str, warnings: list[str]) -> str:
     from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     from reportlab.pdfbase.ttfonts import TTFont
-    catalogue = get_font_catalogue()
-    reason, suggested = _font_problem(family, text)
-    if reason:
-        raise _font_confirmation([{"requested_font": family, "reason": reason, "suggested_font": suggested}])
-    face = catalogue.face(family, text)
-    alias = "DocumentFont_" + face.identity
+    alias = "DocumentFont" + str(list(FONT_FILES).index(family))
     with FONT_LOCK:
         if alias in pdfmetrics.getRegisteredFontNames():
             return alias
-        try:
-            pdfmetrics.registerFont(TTFont(alias, face.path, subfontIndex=face.index))
-            variants = {"normal": alias, "bold": alias, "italic": alias, "boldItalic": alias}
-            required = {ord(char) for char in text if not char.isspace() and ord(char) >= 32}
-            for candidate in catalogue.groups.get(face.family, []):
-                if candidate.pdf_reason or not required <= candidate.coverage:
-                    continue
-                lower = candidate.style.casefold()
-                bold = "bold" in lower or "粗" in lower
-                italic = any(word in lower for word in ("italic", "oblique", "斜"))
-                kind = "boldItalic" if bold and italic else "bold" if bold else "italic" if italic else None
-                if kind:
-                    variant = "DocumentFont_" + candidate.identity
-                    try:
-                        if variant not in pdfmetrics.getRegisteredFontNames():
-                            pdfmetrics.registerFont(TTFont(variant, candidate.path, subfontIndex=candidate.index))
-                        variants[kind] = variant
-                    except Exception:
-                        pass
-            pdfmetrics.registerFontFamily(alias, **variants)
-            return alias
-        except Exception as error:
-            raise _font_confirmation([{"requested_font": family, "reason": "当前PDF引擎无法嵌入此字体，请选择其他字体", "suggested_font": suggested}]) from error
+        file = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / FONT_FILES[family]
+        if file.is_file():
+            try:
+                pdfmetrics.registerFont(TTFont(alias, str(file), subfontIndex=0))
+                pdfmetrics.registerFontFamily(alias, normal=alias, bold=alias, italic=alias, boldItalic=alias)
+                return alias
+            except Exception:
+                pass
+        fallback = "STSong-Light" if family not in {"Times New Roman", "Arial"} else "Times-Roman" if family == "Times New Roman" else "Helvetica"
+        if fallback == "STSong-Light" and fallback not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(UnicodeCIDFont(fallback))
+        warnings.append(f"系统未提供可嵌入的{family}字体，PDF使用{fallback}替代；字体外观可能不同。")
+        return fallback
 
 
 def _pdf_inline(text: str, font: str, cjk_font: str, *, literal: bool = False) -> str:
@@ -294,7 +252,7 @@ def _pdf_inline(text: str, font: str, cjk_font: str, *, literal: bool = False) -
     return "".join(output) or "&#160;"
 
 
-def export_pdf(content: str, style: DocumentStyle, warnings: list[str] | None = None, font_substitutions: dict[str, str] | None = None) -> bytes:
+def export_pdf(content: str, style: DocumentStyle, warnings: list[str] | None = None) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_LEFT
     from reportlab.lib.pagesizes import A4
@@ -302,51 +260,26 @@ def export_pdf(content: str, style: DocumentStyle, warnings: list[str] | None = 
     from reportlab.lib.units import mm
     from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, TableStyle
     warnings = warnings if warnings is not None else []
-    substitutions = font_substitutions or {}
-    blocks = markdown_blocks(content)
-    family_text: dict[str, list[str]] = {style.font_family: []}
-    for block in blocks:
-        family = style.headings[block.level - 1].font_family if block.kind == "heading" else style.font_family
-        texts = [cell for row in block.rows for cell in row] if block.kind == "table" else [block.text]
-        rendered = " ".join(text if block.kind in {"code", "formula"} else "".join(value for value, _ in inline_fragments(text)) for text in texts)
-        if block.kind == 'bullet':
-            rendered = '• ' + rendered
-        elif block.kind == 'ordered':
-            rendered = '0123456789. ' + rendered
-        family_text.setdefault(family, []).append(rendered)
-    resolved, issues = {}, []
-    for requested, texts in family_text.items():
-        actual = substitutions.get(requested, requested)
-        validate_font_name(actual)
-        text = " ".join(texts)
-        reason, suggested = _font_problem(actual, text)
-        if reason:
-            issues.append({"requested_font": requested, "reason": ("所选替代字体“" + actual + "”仍不可用：" if actual != requested else "") + reason, "suggested_font": suggested})
-        else:
-            resolved[requested] = _pdf_font(actual, warnings, text)
-            if actual != requested:
-                warnings.append(f"已按本次明确确认，将PDF中的“{requested}”替换为“{actual}”；模板和原文档字体要求未修改。")
-    if issues:
-        raise _font_confirmation(issues)
-    body_font = resolved[style.font_family]
-    cjk_font = body_font
+    body_font = _pdf_font(style.font_family, warnings)
+    cjk_font = body_font if style.font_family not in {"Arial", "Times New Roman"} else _pdf_font("宋体", warnings)
     output = BytesIO()
     document = SimpleDocTemplate(output, pagesize=A4,
                                  topMargin=style.margin_top_mm * mm, bottomMargin=style.margin_bottom_mm * mm,
                                  leftMargin=style.margin_left_mm * mm, rightMargin=style.margin_right_mm * mm,
                                  title="论文导出", author="研辩台")
     body = ParagraphStyle("DocumentBody", fontName=body_font, fontSize=style.font_size_pt,
-                          leading=style.line_spacing_pt or style.font_size_pt * style.line_spacing, firstLineIndent=style.first_line_indent_pt,
+                          leading=style.font_size_pt * style.line_spacing, firstLineIndent=style.first_line_indent_pt,
                           spaceBefore=style.paragraph_before_pt, spaceAfter=style.paragraph_after_pt,
                           wordWrap="CJK", splitLongWords=True, alignment=TA_LEFT, allowWidows=0, allowOrphans=0)
     heading_styles = []
     for index, heading in enumerate(style.headings):
         heading_styles.append(ParagraphStyle(f"DocumentHeading{index + 1}", parent=body,
-            fontName=resolved.get(heading.font_family, body_font), fontSize=heading.font_size_pt,
-            leading=heading.line_spacing_pt or heading.font_size_pt * heading.line_spacing, firstLineIndent=0,
+            fontName=_pdf_font(heading.font_family, warnings), fontSize=heading.font_size_pt,
+            leading=heading.font_size_pt * heading.line_spacing, firstLineIndent=0,
             spaceBefore=heading.space_before_pt, spaceAfter=heading.space_after_pt, keepWithNext=True))
     flat = ParagraphStyle("DocumentFlat", parent=body, firstLineIndent=0)
     story, counter = [], 0
+    blocks = markdown_blocks(content)
     for block_index, block in enumerate(blocks):
         if block.kind == "table":
             table_style = ParagraphStyle("DocumentCell", parent=flat, fontSize=min(style.font_size_pt, 12),
@@ -371,7 +304,7 @@ def export_pdf(content: str, style: DocumentStyle, warnings: list[str] | None = 
             if block.kind == "bullet":
                 text = "• " + text
         font = appearance.fontName
-        actual_cjk = font
+        actual_cjk = font if block.kind == "heading" and style.headings[block.level - 1].font_family not in {"Arial", "Times New Roman"} else cjk_font
         story.append(Paragraph(_pdf_inline(text, font, actual_cjk, literal=block.kind in {"code", "formula"}), appearance))
     if not story:
         story.append(Paragraph("&#160;", body))
@@ -385,29 +318,12 @@ def export_bytes(payload: DocumentExportRequest) -> tuple[bytes, str, str, list[
         data, media = payload.content.encode("utf-8"), "text/markdown; charset=utf-8"
         warnings.append("Markdown保留原始源码；字体、字号、行距与页边距不属于Markdown格式，未写入文件。")
     elif payload.format == "docx":
-        protected = None
-        if payload.document_id and payload.docx_mode == "preserve":
-            from app.agent_api import get_store
-            from app.docx_preservation import protected_export
-            try:
-                protected = protected_export(get_store(), payload.document_id, payload.content)
-            except ValueError as error:
-                raise HTTPException(409, str(error)) from error
-        if protected:
-            data, notes = protected
-            warnings.extend(notes)
-        else:
-            data = export_docx(payload.content, payload.style)
-            warnings.append("此文件是重新生成的可编辑副本，未保留原 Word 图片、公式结构、分节、域、批注及修订。原 DOCX 已单独留存（若曾导入）。")
-            catalogue = get_font_catalogue()
-            for name in dict.fromkeys([payload.style.font_family, *(heading.font_family for heading in payload.style.headings)]):
-                if catalogue.face(name) is None:
-                    warnings.append(f"Word已保留请求字体名称“{name}”，但本机缺少精确字体文件，打开时可能由系统替代；请在接收端核对所需字体。")
-        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        data, media = export_docx(payload.content, payload.style), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        warnings.append("DOCX保留标题、表格、列表和基础行内样式；图片仅保留源地址，复杂嵌套及原Word分页不作保真还原。")
     else:
-        data, media = export_pdf(payload.content, payload.style, warnings, payload.font_substitutions), "application/pdf"
+        data, media = export_pdf(payload.content, payload.style, warnings), "application/pdf"
         warnings.append("PDF按A4分页；图片仅保留源地址，复杂嵌套样式不作保真还原，字体粗斜体取决于可用字形。")
-    if payload.format != "md" and not (payload.format == "docx" and protected) and re.search(r"\$|\\\(|\\\[", payload.content):
+    if payload.format != "md" and re.search(r"\$|\\\(|\\\[", payload.content):
         warnings.append("公式以原始LaTeX源码保留；本次导出未将公式排版为数学字形。")
     if payload.format != "md" and any(block.kind == "table-fallback" for block in markdown_blocks(payload.content)):
         warnings.append("超过8列的宽表格以逐行文本保留，避免在页面中截断；请按学校要求调整表格。")
@@ -421,7 +337,14 @@ router = APIRouter()
 
 @router.post("/document-export")
 def download_document(payload: DocumentExportRequest) -> Response:
+    if payload.track_history and payload.document_id:
+        from app.agent_api import get_store
+        if get_store().get_workspace_document(payload.document_id) is None:
+            raise HTTPException(404, '文档不存在，请重新选择。')
     data, media, filename, warnings = export_bytes(payload)
+    if payload.track_history:
+        from app.agent_api import get_store
+        get_store().save_export(payload.document_id, filename, payload.format, payload.export_scope, payload.content, media, data)
     return Response(data, media_type=media, headers={
         "Content-Disposition": f'attachment; filename="document.{payload.format}"; filename*=UTF-8\'\'{quote(filename, safe="")}',
         "X-Export-Limitations": quote(json.dumps(warnings, ensure_ascii=False), safe=""),

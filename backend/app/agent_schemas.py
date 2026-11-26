@@ -8,16 +8,6 @@ class StrictOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-class AgentProgress(BaseModel):
-    phase: Literal["review", "challenge", "judgment"]
-    round: int = Field(ge=1, le=2)
-    completed_units: int = Field(ge=0)
-    total_units: Optional[int] = Field(default=None, ge=0)
-    unit: Literal["window", "batch", "task"]
-    reused_units: int = Field(default=0, ge=0)
-    updated_at: str
-
-
 class Evidence(StrictOutput):
     source_id: str = Field(min_length=1, max_length=160)
     quote: str = Field(min_length=1, max_length=1000)

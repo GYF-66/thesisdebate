@@ -78,7 +78,7 @@ class DocumentImportTests(unittest.TestCase):
         self.fail_import("", b"text", "文件名")
         self.fail_import("bad\n.md", b"text", "文件名")
         self.fail_import("x" * 256 + ".md", b"text", "文件名")
-        self.fail_import("论文.pdf", b"%PDF-1.4", "不支持 PDF")
+        self.fail_import("论文.pdf", b"%PDF-1.4", "PDF 文件损坏")
         self.fail_import("论文.docm", b"text", "只支持")
 
     def test_upload_and_character_limits(self):
